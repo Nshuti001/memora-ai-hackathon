@@ -20,6 +20,14 @@ import {
   retentionWindowSeconds,
 } from './time-travel.js';
 import { checkRateLimit, record, snapshot, timed } from './observability.js';
+import {
+  AuthError,
+  login,
+  revokeSession,
+  signup,
+  userForToken,
+  type User,
+} from './auth.js';
 
 export interface ApiRequest {
   method: string;
@@ -43,16 +51,36 @@ function json(status: number, body: unknown, headers?: Record<string, string>): 
   return { kind: 'json', status, body, headers };
 }
 
-/**
- * Every request is scoped to a tenant. The tenant comes from the API key, never from the request
- * body — taking it from the body would let any client read any other client's memories by guessing
- * an id, which is the single most damaging bug this service could have.
- */
-function tenantOf(headers: ApiRequest['headers']): string {
-  const configured = process.env.MEMORA_API_KEYS;
-  const presented = headers['x-api-key'];
+/** Extracts a bearer token from the Authorization header. */
+function bearerToken(headers: ApiRequest['headers']): string | undefined {
+  const raw = headers['authorization'] ?? headers['Authorization'];
+  if (!raw) return undefined;
+  const match = /^Bearer\s+(.+)$/i.exec(raw);
+  return match?.[1]?.trim() || undefined;
+}
 
-  if (!configured) return 'demo';
+/**
+ * Every request is scoped to a tenant, and the tenant is always derived from a credential — never
+ * from the request body. Taking it from the body would let any caller read any other caller's
+ * memories by guessing an id, which is the single most damaging bug this service could have.
+ *
+ * Resolution order:
+ *   1. A logged-in session (Authorization: Bearer …) — each account owns its own tenant.
+ *   2. A configured machine API key (MEMORA_API_KEYS), for server-to-server callers.
+ *   3. The shared "demo" tenant, only when no auth is configured at all.
+ */
+async function resolveTenant(
+  headers: ApiRequest['headers'],
+): Promise<{ tenantId: string; user: User | null }> {
+  const token = bearerToken(headers);
+  if (token) {
+    const user = await userForToken(token);
+    if (!user) throw new HttpError(401, 'Your session has expired. Please sign in again.');
+    return { tenantId: user.tenantId, user };
+  }
+
+  const configured = process.env.MEMORA_API_KEYS;
+  if (!configured) return { tenantId: 'demo', user: null };
 
   const table = new Map(
     configured.split(',').map((pair) => {
@@ -61,9 +89,10 @@ function tenantOf(headers: ApiRequest['headers']): string {
     }),
   );
 
+  const presented = headers['x-api-key'];
   const tenant = presented ? table.get(presented) : undefined;
-  if (!tenant) throw new HttpError(401, 'Missing or invalid x-api-key');
-  return tenant;
+  if (!tenant) throw new HttpError(401, 'Sign in, or present a valid x-api-key.');
+  return { tenantId: tenant, user: null };
 }
 
 /** Resolves the named agent for this tenant, creating it on first use. */
@@ -106,6 +135,9 @@ export async function handleRequest(req: ApiRequest): Promise<ApiResponse> {
   } catch (err) {
     record(label, Date.now() - started, true);
 
+    if (err instanceof AuthError) {
+      return json(err.status, { error: err.message });
+    }
     if (err instanceof InvalidTimestampError) {
       return json(400, { error: err.message });
     }
@@ -138,7 +170,37 @@ async function route(req: ApiRequest): Promise<ApiResponse> {
     return json(200, snapshot());
   }
 
-  const tenantId = tenantOf(req.headers);
+  // -------------------------------------------------------------------------
+  // Authentication — these run before tenant resolution, because signing in is
+  // precisely how a caller acquires a tenant.
+  // -------------------------------------------------------------------------
+
+  if (req.method === 'POST' && req.path === '/api/auth/signup') {
+    const result = await signup({
+      email: req.body?.email,
+      password: req.body?.password,
+      name: req.body?.name,
+    });
+    return json(201, result);
+  }
+
+  if (req.method === 'POST' && req.path === '/api/auth/login') {
+    const result = await login({ email: req.body?.email, password: req.body?.password });
+    return json(200, result);
+  }
+
+  if (req.method === 'POST' && req.path === '/api/auth/logout') {
+    await revokeSession(bearerToken(req.headers));
+    return json(200, { ok: true });
+  }
+
+  if (req.method === 'GET' && req.path === '/api/auth/me') {
+    const user = await userForToken(bearerToken(req.headers));
+    if (!user) return json(401, { error: 'Not signed in' });
+    return json(200, { user });
+  }
+
+  const { tenantId } = await resolveTenant(req.headers);
 
   const limit = await checkRateLimit({ tenantId });
   if (!limit.allowed) {

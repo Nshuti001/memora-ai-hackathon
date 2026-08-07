@@ -5,6 +5,10 @@
  * Lambda Function URL in production. The browser never talks to CockroachDB directly — it has no
  * credentials, and the connection string stays server-side.
  */
+// Every request carries the signed-in session, so the server scopes reads and writes to that
+// user's own tenant. Signed out, the calls fall through to the shared demo tenant.
+import { authHeader } from './auth';
+
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ??
   'http://localhost:8787';
 const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
@@ -123,6 +127,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       'content-type': 'application/json',
       ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+      ...authHeader(),
       ...init?.headers,
     },
   });
@@ -211,6 +216,7 @@ export async function streamChat(
     headers: {
       'content-type': 'application/json',
       ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+      ...authHeader(),
     },
     body: JSON.stringify({ message, history }),
     signal,
