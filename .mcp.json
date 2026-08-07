@@ -1,0 +1,24 @@
+{
+  "$comment": [
+    "CockroachDB Cloud Managed MCP Server — one of the two CockroachDB tools this project uses.",
+    "It gives an AI coding agent (Claude Code, Cursor, VS Code) direct, read-only, audited access to",
+    "the live memory cluster. We use it during development to inspect what the agent actually stored,",
+    "verify the vector index is being used by EXPLAIN, and check recall latency against real data —",
+    "without writing a throwaway admin script or exposing a write path.",
+    "",
+    "Read-only is deliberate: the agent inspects production memory but cannot mutate it, so a bad",
+    "generated query can't corrupt the store. Every call is logged in the CockroachDB Cloud audit log.",
+    "",
+    "COCKROACH_MCP_API_KEY comes from the MCP Server panel in the CockroachDB Cloud Console.",
+    "See SETUP.md step 1."
+  ],
+  "mcpServers": {
+    "cockroachdb": {
+      "type": "http",
+      "url": "https://cockroachlabs.cloud/mcp",
+      "headers": {
+        "Authorization": "Bearer ${COCKROACH_MCP_API_KEY}"
+      }
+    }
+  }
+}

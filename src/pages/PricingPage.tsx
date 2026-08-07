@@ -45,7 +45,7 @@ const tiers = [
       'Unlimited memories',
       'Dedicated infrastructure',
       'Custom retention policies',
-      'SOC 2 + HIPAA compliance',
+      'Full audit log of every recall and write',
       'SSO & RBAC',
       'On-prem deployment',
       'CockroachDB MCP Server',

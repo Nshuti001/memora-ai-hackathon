@@ -4,17 +4,17 @@ import { navigateTo } from '../router';
 import { useReveal } from '../hooks/useReveal';
 
 const trustStats = [
-  { icon: Database, value: '10M+', label: 'Memories stored' },
-  { icon: Zap, value: '<50ms', label: 'Recall latency' },
-  { icon: Clock, value: '99.999%', label: 'Uptime SLA' },
-  { icon: Globe, value: 'Global', label: 'Deployment' },
+  { icon: Database, value: '1024-d', label: 'Titan V2 embeddings' },
+  { icon: Zap, value: 'ANN', label: 'Distributed vector index' },
+  { icon: Clock, value: 'Serializable', label: 'Transactional writes' },
+  { icon: Globe, value: 'AWS', label: 'Lambda + Bedrock' },
 ];
 
 const features = [
   { icon: Database, title: 'Persistent Memory', desc: 'Memories survive across sessions, restarts, and model swaps. Your agent never forgets.' },
   { icon: Sparkles, title: 'Semantic Search', desc: 'Find memories by meaning, not keywords. Vector-embedded retrieval at millisecond speed.' },
   { icon: Zap, title: 'Real-Time Sync', desc: 'Multi-agent memory sync in real time. What one agent learns, all agents know.' },
-  { icon: Shield, title: 'Secure Access', desc: 'Role-based access control with per-agent isolation. SOC 2 Type II compliant.' },
+  { icon: Shield, title: 'Tenant Isolation', desc: 'The vector index is prefixed by tenant and agent, so one agent\'s recall never scans another\'s memories.' },
 ];
 
 const pipeline = ['User', 'AI Agent', 'Amazon Bedrock', 'CockroachDB', 'Vector Index', 'Retrieval', 'Response', 'Memory Update'];
@@ -38,7 +38,7 @@ export default function HomePage() {
               <div className="inline-flex items-center gap-2 rounded-full glass px-4 py-1.5 mb-8 animate-fade-up">
                 <Sparkles className="w-3.5 h-3.5 text-brand-400" />
                 <span className="text-xs font-medium text-ink-200 tracking-wide">
-                  Backed by $20M Series A · Powered by CockroachDB & AWS
+                  Built on CockroachDB Cloud &amp; Amazon Bedrock
                 </span>
               </div>
 
@@ -94,10 +94,10 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
             {[
-              { value: '99.999%', label: 'Availability' },
-              { value: '10M+', label: 'Memories stored' },
-              { value: '<50ms', label: 'Semantic retrieval' },
-              { value: 'Zero', label: 'Downtime migrations' },
+              { value: 'L2', label: 'Index-accelerated distance' },
+              { value: '3', label: 'Memory types modeled' },
+              { value: 'Every', label: 'Recall audited' },
+              { value: 'Soft', label: 'Supersession, never deletion' },
             ].map((s, i) => (
               <div key={i} className="text-center">
                 <div className="font-display text-4xl sm:text-5xl font-bold text-gradient-brand">{s.value}</div>

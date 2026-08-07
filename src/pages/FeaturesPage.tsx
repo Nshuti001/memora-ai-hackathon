@@ -13,9 +13,9 @@ const features = [
   { icon: RefreshCw, title: 'Autonomous Memory Updates', desc: 'Agents update their own memories via Amazon Bedrock — no manual intervention. Memories decay, merge, and evolve.', color: 'brand' },
   { icon: Users, title: 'Multi-Agent Collaboration', desc: 'Multiple agents share a memory namespace. What one agent learns, the entire team knows instantly.', color: 'emerald' },
   { icon: Share2, title: 'Memory Graph', desc: 'Memories are connected as a knowledge graph. Agents traverse relationships to reason over complex context.', color: 'brand' },
-  { icon: Shield, title: 'Secure Role-Based Access', desc: 'Granular RBAC with per-agent isolation, tenant-scoped storage, and SOC 2 Type II compliance.', color: 'emerald' },
+  { icon: Shield, title: 'Tenant-Scoped Isolation', desc: 'Tenancy is derived from the API key, never the request body, and the vector index is prefixed by tenant so recall is physically scoped.', color: 'emerald' },
   { icon: Zap, title: 'Real-Time Sync', desc: 'Memory changes propagate to all agents in under 100ms via WebSocket channels. No stale context.', color: 'brand' },
-  { icon: Globe, title: 'Global Availability', desc: 'Deployed across AWS regions with CockroachDB\'s geo-distributed architecture. 99.999% uptime SLA.', color: 'emerald' },
+  { icon: Globe, title: 'Survives Node Loss', desc: 'CockroachDB replicates every memory across nodes and keeps serving reads and writes when one goes down — no failover step to get wrong.', color: 'emerald' },
 ];
 
 export default function FeaturesPage() {
