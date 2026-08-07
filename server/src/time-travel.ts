@@ -74,7 +74,7 @@ export async function recallAsOf(opts: {
   kinds?: MemoryKind[];
 }): Promise<TimeTravelHit[]> {
   const clause = asOfClause(opts.at);
-  const embedded = await embed(opts.query);
+  const embedded = await embed(opts.query, 'query');
   const vector = toVectorLiteral(embedded.vector);
 
   const rows = await query<Memory & { distance: string }>(
