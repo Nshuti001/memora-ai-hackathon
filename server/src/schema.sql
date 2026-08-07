@@ -156,6 +156,37 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
   PRIMARY KEY (model, text_sha256)
 );
 
+-- Accounts.
+--
+-- Each signup gets its own tenant_id, which is what makes the isolation story real rather than
+-- configured: two users of the deployed demo genuinely cannot see each other's memories, because
+-- every recall is scoped by the tenant derived from their session.
+--
+-- The email is stored lowercased and uniquely constrained per that normalized form — otherwise
+-- "Jane@x.com" and "jane@x.com" become two accounts and the second login silently fails.
+CREATE TABLE IF NOT EXISTS users (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id     STRING NOT NULL,
+  email         STRING NOT NULL,
+  name          STRING NOT NULL DEFAULT '',
+  password_hash STRING NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (email)
+);
+
+-- Login sessions.
+--
+-- Only the SHA-256 of each token is stored. A read of this table therefore does not let anyone
+-- impersonate a user — the bearer value exists solely in the client. Named auth_sessions because
+-- `sessions` already means "a conversation with an agent" in this schema.
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_sha256 STRING PRIMARY KEY,
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  INDEX auth_sessions_by_user (user_id)
+);
+
 -- Fixed-window rate-limit counters, shared across every API instance.
 --
 -- This lives in the database rather than in process memory because an in-process limiter grants the

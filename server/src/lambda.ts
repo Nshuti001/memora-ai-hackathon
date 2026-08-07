@@ -25,7 +25,7 @@ export async function handler(event: LambdaEvent) {
   const allowed = origin && config.corsAllowedOrigins.includes(origin);
 
   const corsHeaders: Record<string, string> = {
-    'access-control-allow-headers': 'content-type, x-api-key',
+    'access-control-allow-headers': 'content-type, x-api-key, authorization',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     ...(allowed ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {}),
   };
