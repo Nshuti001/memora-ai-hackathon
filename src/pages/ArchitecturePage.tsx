@@ -21,7 +21,7 @@ const nodes: ArchNode[] = [
   { id: 'lambda', label: 'AWS Lambda', icon: Zap, desc: 'Serverless compute handlers for memory CRUD, search, and event processing. Auto-scales to zero.', layer: 'Compute', color: '#22d3ee' },
   { id: 'bedrock', label: 'Amazon Bedrock', icon: Cloud, desc: 'Managed foundation models for memory extraction, summarization, and semantic embedding generation.', layer: 'AI', color: '#34d399' },
   { id: 's3', label: 'Amazon S3', icon: HardDrive, desc: 'Object storage for raw memory payloads, exports, and audit logs with lifecycle policies.', layer: 'Storage', color: '#22d3ee' },
-  { id: 'crdb', label: 'CockroachDB', icon: Database, desc: 'Distributed SQL database with multi-region active-active replication. 99.999% uptime SLA.', layer: 'Data', color: '#34d399' },
+  { id: 'crdb', label: 'CockroachDB', icon: Database, desc: 'Distributed SQL with a native vector index. Memories and their embeddings live in one transactional store, so they can never drift apart.', layer: 'Data', color: '#34d399' },
   { id: 'mcp', label: 'CockroachDB MCP Server', icon: Server, desc: 'Model Context Protocol server exposing memory operations to AI agents as tool calls.', layer: 'Data', color: '#22d3ee' },
   { id: 'vector', label: 'Distributed Vector Index', icon: Layers, desc: 'CockroachDB\'s built-in vector index for sub-50ms semantic similarity search at scale.', layer: 'Data', color: '#34d399' },
   { id: 'skills', label: 'CockroachDB Agent Skills', icon: Boxes, desc: 'Pre-built agent skill packs: memory recall, consolidation, decay, and graph traversal.', layer: 'Data', color: '#22d3ee' },
@@ -49,7 +49,7 @@ export default function ArchitecturePage() {
           </h1>
           <p className="mt-6 text-lg text-ink-300 max-w-2xl mx-auto">
             A geo-distributed architecture powered by CockroachDB and AWS.
-            Every component is designed for 99.999% availability and millisecond retrieval.
+            One transactional store for memories and embeddings, searched by meaning.
           </p>
         </div>
 

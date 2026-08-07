@@ -1,0 +1,31 @@
+{
+  "name": "memora-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agentic memory layer on CockroachDB, deployed on AWS",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "db:migrate": "tsx src/migrate.ts",
+    "db:seed": "tsx src/seed.ts",
+    "verify": "tsx src/verify.ts",
+    "test": "node --env-file=.env.test --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "db:reembed": "tsx src/reembed.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^0.30.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

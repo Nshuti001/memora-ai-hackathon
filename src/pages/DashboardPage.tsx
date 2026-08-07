@@ -1,110 +1,247 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Send, Search, Bot, User, Clock, Activity, CheckCircle2,
-  Brain, TrendingUp, Tag, Zap, MessageSquare,
-  RefreshCw, ArrowRight, CircleDot
+  Send, Search, Bot, User, Clock, Activity, Brain, TrendingUp, Tag, Zap,
+  ArrowRight, CircleDot, AlertTriangle, History, Layers, Sparkles, Share2, Archive,
 } from 'lucide-react';
-import KnowledgeGraph from '../components/KnowledgeGraph';
+import KnowledgeGraph, { GraphLegend } from '../components/KnowledgeGraph';
+import {
+  api, relativeTime, streamChat,
+  type AuditEntry, type BeliefDiff, type GraphEdge, type GraphNode,
+  type Memory, type RecalledMemory, type Stats,
+} from '../lib/api';
 
 interface ChatMessage {
   role: 'user' | 'agent';
   content: string;
-  memories?: string[];
+  memories?: { id: string; content: string }[];
+  tools?: string[];
+  latencyMs?: number;
+  streaming?: boolean;
+  /** Answered by the memory layer alone, with no model reasoning behind it. */
+  degraded?: boolean;
 }
 
-const initialMessages: ChatMessage[] = [
-  {
-    role: 'user',
-    content: 'What did the user ask about last week regarding the API migration?',
-  },
-  {
-    role: 'agent',
-    content: 'Last Tuesday, the user asked about the timeline for migrating from REST to GraphQL. I recommended a phased approach starting with the authentication endpoints. The user agreed and asked me to draft a migration plan.',
-    memories: ['api-migration-plan', 'user-preference-phased-rollout', 'graphql-auth-endpoints'],
-  },
-  {
-    role: 'user',
-    content: 'Great. Can you summarize the key decisions from that conversation?',
-  },
-  {
-    role: 'agent',
-    content: 'Three key decisions were made: (1) Migrate auth endpoints first over 2 weeks, (2) Use Apollo Server for the GraphQL layer, (3) Maintain REST endpoints in parallel during transition. The user prioritized zero-downtime migration.',
-    memories: ['apollo-server-decision', 'zero-downtime-requirement', 'parallel-rest-graphql'],
-  },
-];
+const GREETING: ChatMessage = {
+  role: 'agent',
+  content:
+    "I'm Memora. Everything you tell me is stored in CockroachDB and recalled by meaning, so it " +
+    "survives this session. Tell me something about how you work, then ask me about it later — or " +
+    'ask what I believed an hour ago.',
+};
 
-const memories = [
-  { id: 'mem-001', title: 'User prefers dark mode interfaces', time: '2 min ago', importance: 92, confidence: 98, tags: ['preference', 'ui'], category: 'User Preferences' },
-  { id: 'mem-002', title: 'API migration plan: REST → GraphQL', time: '3 days ago', importance: 88, confidence: 95, tags: ['api', 'migration', 'graphql'], category: 'Technical Decisions' },
-  { id: 'mem-003', title: 'Team uses Slack for daily standups', time: '1 week ago', importance: 65, confidence: 90, tags: ['workflow', 'communication'], category: 'Team Workflow' },
-  { id: 'mem-004', title: 'Production deploy scheduled for Fridays', time: '1 week ago', importance: 78, confidence: 92, tags: ['devops', 'deploy'], category: 'DevOps' },
-  { id: 'mem-005', title: 'User timezone: PST (UTC-8)', time: '2 weeks ago', importance: 71, confidence: 100, tags: ['preference', 'timezone'], category: 'User Preferences' },
-  { id: 'mem-006', title: 'Q4 OKR: reduce API latency by 40%', time: '2 weeks ago', importance: 85, confidence: 88, tags: ['okr', 'performance'], category: 'Business Goals' },
-];
-
-const agents = [
-  { name: 'Atlas', status: 'active', task: 'Processing user query', color: '#22d3ee' },
-  { name: 'Nova', status: 'active', task: 'Memory consolidation', color: '#34d399' },
-  { name: 'Echo', status: 'idle', task: 'Awaiting input', color: '#7a8aa8' },
-  { name: 'Forge', status: 'active', task: 'Vector indexing', color: '#22d3ee' },
-];
-
-const tasks = [
-  { title: 'Migrate auth endpoints to GraphQL', status: 'in-progress', agent: 'Atlas', priority: 'high' },
-  { title: 'Review memory decay policy', status: 'pending', agent: 'Nova', priority: 'medium' },
-  { title: 'Update knowledge graph schema', status: 'completed', agent: 'Forge', priority: 'low' },
-  { title: 'Sync cross-agent memory namespace', status: 'in-progress', agent: 'Nova', priority: 'high' },
-];
-
-const decisions = [
-  { title: 'Adopted Apollo Server for GraphQL', agent: 'Atlas', time: '3d ago', confidence: 95 },
-  { title: 'Set memory retention to 90 days', agent: 'Nova', time: '1w ago', confidence: 88 },
-  { title: 'Enabled multi-agent memory sharing', agent: 'Echo', time: '2w ago', confidence: 92 },
-];
-
-const agentResponses = [
-  "Based on the user's memory profile, they prefer concise technical summaries. Here's what I found: the migration plan is 60% complete with auth endpoints done. Next phase covers the billing API.",
-  "I recall from our last conversation that you wanted zero-downtime deployment. I've prepared a canary release strategy that maintains both REST and GraphQL endpoints during the transition.",
-  "From the memory graph, I can see three related decisions: the Apollo Server choice, the phased rollout preference, and the parallel-endpoint requirement. All three are on track.",
-  "The user's past interactions show a strong preference for documentation alongside code changes. I've generated API docs for the new GraphQL endpoints and attached them to this memory.",
-];
+type Tab = 'timeline' | 'graph' | 'history';
 
 export default function DashboardPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([GREETING]);
   const [input, setInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'timeline' | 'graph'>('timeline');
   const [isTyping, setIsTyping] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<Tab>('timeline');
+
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [searchResults, setSearchResults] = useState<RecalledMemory[] | null>(null);
+  const [searchLatency, setSearchLatency] = useState<number | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] }>({ nodes: [], edges: [] });
+
+  const [travelQuery, setTravelQuery] = useState('');
+  const [travelAt, setTravelAt] = useState('-1h');
+  const [diff, setDiff] = useState<BeliefDiff | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [retention, setRetention] = useState<string | null>(null);
+
+  const [maintenance, setMaintenance] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [degraded, setDegraded] = useState<string | null>(null);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [memoryPage, statsPayload, auditPage, graph, retentionInfo] = await Promise.all([
+        api.memories(50),
+        api.stats(),
+        api.audit(6),
+        api.graph(40),
+        api.retention(),
+      ]);
+      setMemories(memoryPage.memories);
+      setStats(statsPayload);
+      setAudit(auditPage.entries);
+      setGraphData(graph);
+      setRetention(retentionInfo.humanized);
+      setConnectionError(null);
+    } catch (err) {
+      setConnectionError(err instanceof Error ? err.message : 'Cannot reach the memory API');
+    }
+  }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    // `block: 'nearest'` confines the scroll to the chat pane. The default ('start') scrolls the
+    // whole document, which on first render jumps the page past its own header.
+    if (messages.length <= 1) return;
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, isTyping]);
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
-    const userMsg: ChatMessage = { role: 'user', content: input };
-    setMessages((m) => [...m, userMsg]);
+  // Abort any in-flight stream when the page unmounts, so an abandoned conversation stops burning
+  // Bedrock tokens the moment nobody is watching.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults(null);
+      setSearchLatency(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const { results, latencyMs } = await api.search(q);
+        setSearchResults(results);
+        setSearchLatency(latencyMs);
+      } catch {
+        setSearchResults([]);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text || isTyping) return;
+
+    const history = messages
+      .filter((m) => m !== GREETING)
+      .map((m) => ({
+        role: m.role === 'agent' ? ('assistant' as const) : ('user' as const),
+        content: m.content,
+      }));
+
+    setMessages((m) => [...m, { role: 'user', content: text }]);
     setInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      const response = agentResponses[Math.floor(Math.random() * agentResponses.length)];
-      const agentMsg: ChatMessage = {
-        role: 'agent',
-        content: response,
-        memories: ['retrieved-context-001', 'user-preference-concise', 'migration-progress'],
-      };
-      setMessages((m) => [...m, agentMsg]);
-      setIsTyping(false);
-    }, 1800);
-  };
+    // The streaming placeholder is appended once, then mutated in place as frames arrive.
+    setMessages((m) => [...m, { role: 'agent', content: '', streaming: true, tools: [] }]);
 
-  const filteredMemories = memories.filter(
-    (m) =>
-      m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const patchLast = (patch: (msg: ChatMessage) => ChatMessage) =>
+      setMessages((m) => {
+        const next = [...m];
+        const last = next[next.length - 1];
+        if (last?.role === 'agent') next[next.length - 1] = patch(last);
+        return next;
+      });
+
+    try {
+      await streamChat(
+        text,
+        history,
+        (event) => {
+          if (event.type === 'text') {
+            patchLast((msg) => ({ ...msg, content: msg.content + event.text }));
+          } else if (event.type === 'tool_start') {
+            patchLast((msg) => ({ ...msg, tools: [...(msg.tools ?? []), event.name] }));
+          } else if (event.type === 'done') {
+            setDegraded(event.turn.degraded?.detail ?? null);
+            patchLast((msg) => ({
+              ...msg,
+              content: event.turn.reply || msg.content,
+              memories: event.turn.recalled.map((r) => ({ id: r.id, content: r.content })),
+              latencyMs: event.turn.latencyMs,
+              streaming: false,
+              degraded: Boolean(event.turn.degraded),
+            }));
+          } else if (event.type === 'error') {
+            patchLast((msg) => ({
+              ...msg,
+              content: `The agent failed: ${event.message}`,
+              streaming: false,
+            }));
+          }
+        },
+        controller.signal,
+      );
+      void refresh();
+    } catch (err) {
+      patchLast((msg) => ({
+        ...msg,
+        content: `The memory API is unreachable: ${err instanceof Error ? err.message : 'unknown error'}. Check that the server is running and server/.env is filled in.`,
+        streaming: false,
+      }));
+    } finally {
+      setIsTyping(false);
+      abortRef.current = null;
+    }
+  }
+
+  async function runBeliefDiff() {
+    const q = travelQuery.trim();
+    if (!q) return;
+
+    setDiffLoading(true);
+    try {
+      setDiff(await api.beliefDiff(q, travelAt));
+      setConnectionError(null);
+    } catch (err) {
+      setConnectionError(err instanceof Error ? err.message : 'Time-travel query failed');
+      setDiff(null);
+    } finally {
+      setDiffLoading(false);
+    }
+  }
+
+  async function runConsolidation() {
+    setMaintenance('Consolidating…');
+    try {
+      const result = await api.consolidate();
+      setMaintenance(
+        result.memoriesCreated.length === 0
+          ? 'No clusters large enough to consolidate yet.'
+          : `Distilled ${result.sourcesConsolidated} episodes into ${result.memoriesCreated.length} durable fact(s).`,
+      );
+      void refresh();
+    } catch (err) {
+      setMaintenance(err instanceof Error ? err.message : 'Consolidation failed');
+    }
+  }
+
+  async function runDecay() {
+    setMaintenance('Applying decay…');
+    try {
+      const result = await api.decay(1);
+      setMaintenance(`Decayed ${result.decayed} memories, archived ${result.archived}.`);
+      void refresh();
+    } catch (err) {
+      setMaintenance(err instanceof Error ? err.message : 'Decay failed');
+    }
+  }
+
+  const displayed: (Memory & { score?: number })[] = searchResults ?? memories;
+
+  const statCards = [
+    { label: 'Live Memories', value: stats ? String(stats.total) : '—', icon: Brain, accent: 'brand' },
+    { label: 'Durable Facts', value: stats ? String(stats.semantic) : '—', icon: TrendingUp, accent: 'emerald' },
+    { label: 'Superseded', value: stats ? String(stats.superseded) : '—', icon: ArrowRight, accent: 'brand' },
+    { label: 'Archived', value: stats ? String(stats.archived) : '—', icon: Archive, accent: 'brand' },
+    {
+      label: 'Avg Recall',
+      value: stats?.avgRecallMs != null ? `${stats.avgRecallMs}ms` : '—',
+      icon: Zap,
+      accent: 'emerald',
+    },
+  ];
 
   return (
     <div className="pt-28 pb-12 min-h-screen">
@@ -113,46 +250,111 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-bold text-white">Agent Dashboard</h1>
-            <p className="text-sm text-ink-400 mt-1">Live memory intelligence for your autonomous agents</p>
+            <p className="text-sm text-ink-400 mt-1">
+              Live memory served from CockroachDB
+              {retention && ` · ${retention} of history queryable`}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="glass rounded-xl px-3 py-2 flex items-center gap-2">
-              <CircleDot className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <span className="text-xs font-medium text-ink-200">All systems operational</span>
-            </div>
+          <div className="glass rounded-xl px-3 py-2 flex items-center gap-2">
+            {connectionError ? (
+              <>
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-xs font-medium text-amber-200">API unreachable</span>
+              </>
+            ) : (
+              <>
+                <CircleDot className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span className="text-xs font-medium text-ink-200">Connected</span>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Top stats row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[
-            { label: 'Total Memories', value: '1,284', icon: Brain, color: 'brand' },
-            { label: 'Active Agents', value: '3 / 4', icon: Bot, color: 'emerald' },
-            { label: 'Avg Importance', value: '78.5', icon: TrendingUp, color: 'brand' },
-            { label: 'Recall Latency', value: '42ms', icon: Zap, color: 'emerald' },
-          ].map((s, i) => (
+        {connectionError && (
+          <div className="mb-6 glass rounded-2xl p-4 border border-amber-500/20">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-sm text-ink-300">
+                <p className="text-amber-200 font-medium">Not connected to the memory API</p>
+                <p className="mt-1 leading-relaxed">
+                  {connectionError}. Start it with <code className="font-mono text-brand-300">cd server &amp;&amp; npm run dev</code>,
+                  and make sure <code className="font-mono text-brand-300">server/.env</code> has your CockroachDB and AWS
+                  credentials. See SETUP.md.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {stats?.embeddings != null && stats.embeddings.unsearchable > 0 && (
+          <div className="mb-6 glass rounded-2xl p-4 border border-red-500/25">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <div className="text-sm text-ink-300">
+                <p className="text-red-200 font-medium">
+                  {stats.embeddings.unsearchable} memor
+                  {stats.embeddings.unsearchable === 1 ? 'y is' : 'ies are'} not searchable
+                </p>
+                <p className="mt-1 leading-relaxed">
+                  They were embedded by a different model than the active one
+                  (<code className="font-mono text-brand-300">{stats.embeddings.activeModel}</code>), and
+                  vectors from two models sit in unrelated spaces — comparing them returns noise, so
+                  recall excludes them rather than ranking garbage. The rows are intact; re-embed with{' '}
+                  <code className="font-mono text-brand-300">npm run db:reembed -- --run</code>.
+                </p>
+                <p className="mt-1 text-[11px] font-mono text-ink-500">
+                  {stats.embeddings.byModel.map((m) => `${m.count}× ${m.model}`).join('  ·  ')}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {degraded && (
+          <div className="mb-6 glass rounded-2xl p-4 border border-amber-500/20">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-sm text-ink-300">
+                <p className="text-amber-200 font-medium">
+                  Memory-only mode — replies are not coming from Claude
+                </p>
+                <p className="mt-1 leading-relaxed">
+                  {degraded} Recall, storage, search, the graph and time travel all still run against
+                  CockroachDB; only the model reasoning is unavailable. Answers below are the memory
+                  layer reporting what it stored and retrieved, nothing more.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          {statCards.map((s, i) => (
             <div key={i} className="glass rounded-2xl p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-ink-400">{s.label}</span>
-                <s.icon className={`w-4 h-4 ${s.color === 'brand' ? 'text-brand-400' : 'text-emerald-400'}`} />
+                <s.icon className={`w-4 h-4 ${s.accent === 'brand' ? 'text-brand-400' : 'text-emerald-400'}`} />
               </div>
               <div className="font-display text-2xl font-bold text-white">{s.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Main grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Left: Chat */}
-          <div className="lg:col-span-5 glass rounded-2xl flex flex-col h-[600px]">
+          {/* Chat */}
+          <div className="lg:col-span-5 glass rounded-2xl flex flex-col h-[640px]">
             <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.06]">
               <div className="w-9 h-9 rounded-xl bg-brand-500/15 border border-brand-500/20 flex items-center justify-center">
                 <Bot className="w-5 h-5 text-brand-400" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-white">Atlas Agent</div>
-                <div className="text-xs text-emerald-400 flex items-center gap-1">
-                  <CircleDot className="w-2.5 h-2.5" /> Active · 3 memories recalled
+                <div className="text-sm font-semibold text-white">Memora Agent</div>
+                <div className={`text-xs flex items-center gap-1 ${degraded ? 'text-amber-300' : 'text-emerald-400'}`}>
+                  <CircleDot className="w-2.5 h-2.5" />
+                  {degraded
+                    ? 'Memory-only · Bedrock unavailable'
+                    : 'Claude on Bedrock · memory in CockroachDB'}
                 </div>
               </div>
             </div>
@@ -163,54 +365,74 @@ export default function DashboardPage() {
                   <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
                     msg.role === 'user' ? 'bg-ink-700' : 'bg-brand-500/15 border border-brand-500/20'
                   }`}>
-                    {msg.role === 'user' ? <User className="w-4 h-4 text-ink-300" /> : <Bot className="w-4 h-4 text-brand-400" />}
+                    {msg.role === 'user'
+                      ? <User className="w-4 h-4 text-ink-300" />
+                      : <Bot className="w-4 h-4 text-brand-400" />}
                   </div>
-                  <div className={`max-w-[80%] ${msg.role === 'user' ? 'text-right' : ''}`}>
-                    <div className={`inline-block rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                      msg.role === 'user' ? 'bg-ink-700 text-ink-100' : 'glass text-ink-100'
-                    }`}>
-                      {msg.content}
-                    </div>
-                    {msg.memories && (
-                      <div className="flex flex-wrap gap-1.5 mt-2 justify-start">
-                        {msg.memories.map((mem, j) => (
-                          <span key={j} className="inline-flex items-center gap-1 rounded-md bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 text-[10px] font-mono text-brand-300">
-                            <Brain className="w-2.5 h-2.5" /> {mem}
+                  <div className={`max-w-[82%] ${msg.role === 'user' ? 'text-right' : ''}`}>
+                    {msg.tools && msg.tools.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1.5">
+                        {msg.tools.map((tool, j) => (
+                          <span
+                            key={j}
+                            className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[9px] font-mono text-emerald-300"
+                          >
+                            <Sparkles className="w-2 h-2" /> {tool}
                           </span>
                         ))}
                       </div>
                     )}
+
+                    {msg.degraded && (
+                      <div className="mb-1 inline-flex items-center gap-1 rounded bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 text-[9px] font-mono text-amber-300">
+                        <AlertTriangle className="w-2 h-2" /> memory layer only — not model output
+                      </div>
+                    )}
+
+                    {(msg.content || !msg.streaming) && (
+                      <div className={`inline-block rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-line ${
+                        msg.role === 'user' ? 'bg-ink-700 text-ink-100' : 'glass text-ink-100'
+                      }`}>
+                        {msg.content}
+                        {msg.streaming && <span className="inline-block w-1.5 h-3.5 ml-0.5 bg-brand-400 animate-pulse align-middle" />}
+                      </div>
+                    )}
+
+                    {msg.memories && msg.memories.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2 justify-start">
+                        {msg.memories.map((mem) => (
+                          <span
+                            key={mem.id}
+                            title={mem.content}
+                            className="inline-flex items-center gap-1 rounded-md bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 text-[10px] font-mono text-brand-300"
+                          >
+                            <Brain className="w-2.5 h-2.5" /> recalled {mem.id.slice(0, 8)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {msg.latencyMs != null && (
+                      <div className="mt-1 text-[10px] font-mono text-ink-500">{msg.latencyMs}ms</div>
+                    )}
                   </div>
                 </div>
               ))}
-
-              {isTyping && (
-                <div className="flex gap-3">
-                  <div className="shrink-0 w-8 h-8 rounded-lg bg-brand-500/15 border border-brand-500/20 flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-brand-400" />
-                  </div>
-                  <div className="glass rounded-2xl px-4 py-3 flex gap-1.5">
-                    {[0, 1, 2].map((d) => (
-                      <div key={d} className="w-2 h-2 rounded-full bg-brand-400 animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />
-                    ))}
-                  </div>
-                </div>
-              )}
               <div ref={chatEndRef} />
             </div>
 
-            <div className="px-4 py-3 border-t border-white/[0.06]">
+            <div className="px-5 py-4 border-t border-white/[0.06]">
               <div className="flex items-center gap-2">
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                  placeholder="Ask Atlas anything..."
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                  placeholder="Tell the agent something, or ask what it remembers…"
                   className="flex-1 bg-ink-900/50 rounded-xl px-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors"
                 />
                 <button
                   onClick={sendMessage}
-                  className="w-10 h-10 rounded-xl bg-gradient-to-r from-brand-400 to-brand-500 text-ink-950 flex items-center justify-center hover:shadow-lg hover:shadow-brand-500/30 transition-all"
+                  disabled={isTyping || !input.trim()}
+                  className="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-r from-brand-400 to-brand-500 text-ink-950 flex items-center justify-center hover:shadow-lg hover:shadow-brand-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -218,168 +440,274 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Right: Memory panel */}
+          {/* Right column */}
           <div className="lg:col-span-7 space-y-4">
-            {/* Search + tabs */}
             <div className="glass rounded-2xl p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex-1 relative">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+                <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-500" />
                   <input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search memories by meaning, tag, or category..."
+                    placeholder="Search memories by meaning…"
                     className="w-full bg-ink-900/50 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors"
                   />
                 </div>
                 <div className="flex glass rounded-xl p-1">
-                  <button
-                    onClick={() => setActiveTab('timeline')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${activeTab === 'timeline' ? 'bg-brand-500/20 text-brand-300' : 'text-ink-400 hover:text-white'}`}
-                  >
-                    Timeline
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('graph')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${activeTab === 'graph' ? 'bg-brand-500/20 text-brand-300' : 'text-ink-400 hover:text-white'}`}
-                  >
-                    Graph
-                  </button>
+                  {([
+                    ['timeline', 'Timeline', Layers],
+                    ['graph', 'Graph', Share2],
+                    ['history', 'Time Travel', History],
+                  ] as const).map(([id, label, Icon]) => (
+                    <button
+                      key={id}
+                      onClick={() => setActiveTab(id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all inline-flex items-center gap-1.5 ${
+                        activeTab === id ? 'bg-brand-500/20 text-brand-300' : 'text-ink-400 hover:text-white'
+                      }`}
+                    >
+                      <Icon className="w-3 h-3" /> {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {activeTab === 'timeline' ? (
-                <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-                  {filteredMemories.map((m) => (
-                    <div key={m.id} className="glass rounded-xl p-3 hover:bg-white/[0.04] transition-all cursor-pointer group">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Clock className="w-3 h-3 text-ink-500 shrink-0" />
-                            <span className="text-[10px] font-mono text-ink-500">{m.time}</span>
-                            <span className="text-[10px] text-ink-600">·</span>
-                            <span className="text-[10px] text-ink-400">{m.category}</span>
+              {activeTab === 'timeline' && (
+                <>
+                  {searchResults && (
+                    <div className="mb-3 text-[11px] font-mono text-ink-400">
+                      {searchResults.length} match{searchResults.length === 1 ? '' : 'es'} by vector similarity
+                      {searchLatency != null && ` · ${searchLatency}ms`}
+                    </div>
+                  )}
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                    {displayed.map((m) => (
+                      <div key={m.id} className="glass rounded-xl p-3 hover:bg-white/[0.04] transition-all group">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <Clock className="w-3 h-3 text-ink-500 shrink-0" />
+                              <span className="text-[10px] font-mono text-ink-500">{relativeTime(m.created_at)}</span>
+                              <span className="text-[10px] text-ink-600">·</span>
+                              <span className="text-[10px] text-ink-400">{m.kind}</span>
+                              {m.shared && (
+                                <span className="text-[9px] px-1.5 rounded bg-amber-500/15 text-amber-300">shared</span>
+                              )}
+                              {m.score != null && (
+                                <span className="text-[10px] font-mono text-brand-300">{m.score.toFixed(3)}</span>
+                              )}
+                            </div>
+                            <p className="text-sm text-white group-hover:text-brand-300 transition-colors">{m.content}</p>
+                            {m.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {m.tags.map((t, j) => (
+                                  <span key={j} className="inline-flex items-center gap-0.5 rounded bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-mono text-ink-400">
+                                    <Tag className="w-2 h-2" /> {t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <p className="text-sm text-white truncate group-hover:text-brand-300 transition-colors">{m.title}</p>
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {m.tags.map((t, j) => (
-                              <span key={j} className="inline-flex items-center gap-0.5 rounded bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-mono text-ink-400">
-                                <Tag className="w-2 h-2" /> {t}
-                              </span>
+                          <div className="shrink-0 text-right space-y-1">
+                            {[
+                              { value: m.importance, className: 'bg-gradient-to-r from-brand-400 to-emerald-400' },
+                              { value: m.confidence, className: 'bg-emerald-400' },
+                            ].map((bar, j) => (
+                              <div key={j} className="flex items-center gap-1">
+                                <div className="w-16 h-1.5 rounded-full bg-ink-700 overflow-hidden">
+                                  <div className={`h-full rounded-full ${bar.className}`} style={{ width: `${Math.round(bar.value * 100)}%` }} />
+                                </div>
+                                <span className="text-[9px] font-mono text-ink-400 w-6">{Math.round(bar.value * 100)}</span>
+                              </div>
                             ))}
                           </div>
                         </div>
-                        <div className="shrink-0 text-right">
-                          <div className="flex items-center gap-1 mb-1">
-                            <div className="w-16 h-1.5 rounded-full bg-ink-700 overflow-hidden">
-                              <div className="h-full rounded-full bg-gradient-to-r from-brand-400 to-emerald-400" style={{ width: `${m.importance}%` }} />
-                            </div>
-                            <span className="text-[9px] font-mono text-ink-400 w-6">{m.importance}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <div className="w-16 h-1.5 rounded-full bg-ink-700 overflow-hidden">
-                              <div className="h-full rounded-full bg-emerald-400" style={{ width: `${m.confidence}%` }} />
-                            </div>
-                            <span className="text-[9px] font-mono text-ink-400 w-6">{m.confidence}</span>
-                          </div>
-                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {filteredMemories.length === 0 && (
-                    <div className="text-center py-8 text-sm text-ink-500">No memories found for "{searchQuery}"</div>
-                  )}
+                    ))}
+                    {displayed.length === 0 && (
+                      <div className="text-center py-8 text-sm text-ink-500">
+                        {searchQuery
+                          ? `Nothing close to "${searchQuery}" yet`
+                          : 'No memories yet — tell the agent something in the chat.'}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'graph' && (
+                <div>
+                  <div className="h-[300px]">
+                    <KnowledgeGraph nodes={graphData.nodes} edges={graphData.edges} className="w-full h-full" />
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-white/[0.05]">
+                    <GraphLegend />
+                    <p className="mt-1.5 text-[10px] text-ink-500">
+                      Node size is importance. Dashed outlines are superseded or archived memories,
+                      kept so revision history stays visible.
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <div className="h-[260px] flex items-center justify-center">
-                  <KnowledgeGraph className="w-full h-full max-w-[280px]" />
+              )}
+
+              {activeTab === 'history' && (
+                <div className="min-h-[300px]">
+                  <p className="text-xs text-ink-400 mb-3 leading-relaxed">
+                    Read the memory store as it existed in the past. CockroachDB keeps superseded row
+                    versions, so this is the agent's actual former belief state — not a reconstruction.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                    <input
+                      value={travelQuery}
+                      onChange={(e) => setTravelQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && runBeliefDiff()}
+                      placeholder="What topic? e.g. deployment schedule"
+                      className="flex-1 bg-ink-900/50 rounded-xl px-3 py-2 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none"
+                    />
+                    <select
+                      value={travelAt}
+                      onChange={(e) => setTravelAt(e.target.value)}
+                      className="bg-ink-900/50 rounded-xl px-3 py-2 text-sm text-white border border-white/[0.06] focus:border-brand-400/30 focus:outline-none"
+                    >
+                      <option value="-5m">5 minutes ago</option>
+                      <option value="-1h">1 hour ago</option>
+                      <option value="-6h">6 hours ago</option>
+                      <option value="-1d">1 day ago</option>
+                      <option value="-3d">3 days ago</option>
+                    </select>
+                    <button
+                      onClick={runBeliefDiff}
+                      disabled={diffLoading || !travelQuery.trim()}
+                      className="rounded-xl bg-brand-500/20 border border-brand-500/30 text-brand-200 px-4 py-2 text-sm font-medium hover:bg-brand-500/30 transition-all disabled:opacity-40"
+                    >
+                      {diffLoading ? 'Reading…' : 'Compare'}
+                    </button>
+                  </div>
+
+                  {diff && (
+                    <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                      {([
+                        ['Learned since then', diff.learned, 'emerald'],
+                        ['Changed or corrected', diff.changed, 'amber'],
+                        ['Unchanged', diff.unchanged, 'ink'],
+                      ] as const).map(([label, group, tone]) => (
+                        <div key={label}>
+                          <div className={`text-[10px] font-mono mb-1 ${
+                            tone === 'emerald' ? 'text-emerald-300'
+                              : tone === 'amber' ? 'text-amber-300' : 'text-ink-500'
+                          }`}>
+                            {label} ({group.length})
+                          </div>
+                          {group.length === 0 ? (
+                            <div className="text-xs text-ink-600 pl-2">none</div>
+                          ) : (
+                            group.map((m) => (
+                              <div key={m.id} className="text-xs text-ink-200 pl-2 py-0.5 border-l border-white/[0.08]">
+                                {m.content}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!diff && !diffLoading && (
+                    <div className="text-center py-8 text-sm text-ink-500">
+                      Enter a topic to compare past and present belief.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Agents + Tasks */}
+            {/* Composition + operations */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Agent status */}
               <div className="glass rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Activity className="w-4 h-4 text-brand-400" />
-                  <h3 className="text-sm font-semibold text-white">Agent Status</h3>
+                  <h3 className="text-sm font-semibold text-white">Memory Composition</h3>
                 </div>
                 <div className="space-y-2.5">
-                  {agents.map((a, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold" style={{ backgroundColor: `${a.color}15`, border: `1px solid ${a.color}30`, color: a.color }}>
-                          {a.name[0]}
+                  {[
+                    { label: 'Episodic', hint: 'things that happened', value: stats?.episodic ?? 0, color: '#22d3ee' },
+                    { label: 'Semantic', hint: 'durable facts', value: stats?.semantic ?? 0, color: '#34d399' },
+                    { label: 'Procedural', hint: 'learned how-to', value: stats?.procedural ?? 0, color: '#a78bfa' },
+                  ].map((row) => {
+                    const total = Math.max(1, stats?.total ?? 0);
+                    return (
+                      <div key={row.label} className="flex items-center gap-3">
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+                          style={{ backgroundColor: `${row.color}15`, border: `1px solid ${row.color}30`, color: row.color }}
+                        >
+                          {row.value}
                         </div>
-                        <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-ink-950 ${a.status === 'active' ? 'bg-emerald-400' : 'bg-ink-500'}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-white">{row.label}</div>
+                          <div className="text-[10px] text-ink-400 truncate">{row.hint}</div>
+                        </div>
+                        <div className="w-14 h-1.5 rounded-full bg-ink-700 overflow-hidden shrink-0">
+                          <div className="h-full rounded-full" style={{ width: `${(row.value / total) * 100}%`, backgroundColor: row.color }} />
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-white">{a.name}</div>
-                        <div className="text-[10px] text-ink-400 truncate">{a.task}</div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-white/[0.05]">
+                  <div className="text-[10px] text-ink-500 mb-2">Maintenance</div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={runConsolidation}
+                      className="flex-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-200 px-2 py-1.5 text-[11px] font-medium hover:bg-emerald-500/25 transition-all"
+                    >
+                      Consolidate
+                    </button>
+                    <button
+                      onClick={runDecay}
+                      className="flex-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-ink-300 px-2 py-1.5 text-[11px] font-medium hover:bg-white/[0.08] transition-all"
+                    >
+                      Apply decay
+                    </button>
+                  </div>
+                  {maintenance && <p className="mt-2 text-[10px] text-ink-400 leading-snug">{maintenance}</p>}
                 </div>
               </div>
 
-              {/* Active tasks */}
               <div className="glass rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-semibold text-white">Active Tasks</h3>
+                  <Clock className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-white">Recent Operations</h3>
                 </div>
                 <div className="space-y-2.5">
-                  {tasks.map((t, i) => (
-                    <div key={i} className="flex items-start gap-2.5">
+                  {audit.map((entry) => (
+                    <div key={entry.id} className="flex items-start gap-2.5">
                       <div className={`shrink-0 mt-0.5 w-4 h-4 rounded flex items-center justify-center ${
-                        t.status === 'completed' ? 'bg-emerald-500/20' : t.status === 'in-progress' ? 'bg-brand-500/20' : 'bg-ink-700'
+                        entry.operation === 'recall' ? 'bg-brand-500/20' : 'bg-emerald-500/20'
                       }`}>
-                        {t.status === 'completed' && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                        {t.status === 'in-progress' && <RefreshCw className="w-3 h-3 text-brand-400 animate-spin" style={{ animationDuration: '3s' }} />}
-                        {t.status === 'pending' && <div className="w-1.5 h-1.5 rounded-full bg-ink-500" />}
+                        {entry.operation === 'recall'
+                          ? <Search className="w-2.5 h-2.5 text-brand-400" />
+                          : <Brain className="w-2.5 h-2.5 text-emerald-400" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs text-white truncate">{t.title}</div>
+                        <div className="text-xs text-white truncate">{entry.query ?? entry.operation}</div>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[9px] text-ink-500">{t.agent}</span>
-                          <span className={`text-[9px] px-1.5 rounded ${
-                            t.priority === 'high' ? 'bg-red-500/15 text-red-300' : t.priority === 'medium' ? 'bg-yellow-500/15 text-yellow-300' : 'bg-ink-700 text-ink-400'
-                          }`}>{t.priority}</span>
+                          <span className="text-[9px] text-ink-500">{entry.operation}</span>
+                          <span className="text-[9px] text-ink-500">{entry.result_ids.length} result(s)</span>
+                          {entry.latency_ms != null && (
+                            <span className="text-[9px] px-1.5 rounded bg-ink-700 text-ink-400 font-mono">
+                              {entry.latency_ms}ms
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
                   ))}
+                  {audit.length === 0 && (
+                    <div className="text-xs text-ink-500 py-2">No operations logged yet.</div>
+                  )}
                 </div>
-              </div>
-            </div>
-
-            {/* Recent decisions */}
-            <div className="glass rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <MessageSquare className="w-4 h-4 text-brand-400" />
-                <h3 className="text-sm font-semibold text-white">Recent Decisions</h3>
-              </div>
-              <div className="space-y-2">
-                {decisions.map((d, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 py-1.5 border-b border-white/[0.04] last:border-0">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-6 h-6 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center shrink-0">
-                        <ArrowRight className="w-3 h-3 text-brand-400" />
-                      </div>
-                      <span className="text-xs text-white truncate">{d.title}</span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[9px] text-ink-500">{d.time}</span>
-                      <div className="flex items-center gap-1">
-                        <div className="w-12 h-1 rounded-full bg-ink-700 overflow-hidden">
-                          <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${d.confidence}%` }} />
-                        </div>
-                        <span className="text-[9px] font-mono text-emerald-400">{d.confidence}%</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
               </div>
             </div>
           </div>

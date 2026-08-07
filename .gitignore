@@ -21,3 +21,17 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.*
+!.env.example
+!.env.test
+.env.local
+.env.*.local
+*.env.backup*
+server/.env.backup*
+
+# Lambda deployment artifacts
+.deploy
+function.zip
+
+# Hackathon rules document — not our source, not for redistribution
+rules.docx

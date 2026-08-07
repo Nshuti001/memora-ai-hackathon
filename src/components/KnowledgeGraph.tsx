@@ -1,37 +1,257 @@
-export default function KnowledgeGraph({ className = '' }: { className?: string }) {
-  const nodes = [
-    { x: 200, y: 55,  r: 14, label: 'User',    color: '#22d3ee' },
-    { x: 80,  y: 145, r: 10, label: 'Pref',    color: '#34d399' },
-    { x: 320, y: 145, r: 10, label: 'History', color: '#34d399' },
-    { x: 130, y: 245, r: 12, label: 'Context', color: '#22d3ee' },
-    { x: 270, y: 245, r: 12, label: 'Task',    color: '#22d3ee' },
-    { x: 200, y: 340, r: 10, label: 'Memory',  color: '#34d399' },
-    { x: 60,  y: 315, r:  8, label: 'Tag',     color: '#34d399' },
-    { x: 340, y: 315, r:  8, label: 'Meta',    color: '#34d399' },
-  ];
-  const edges: [number, number][] = [
-    [0,1],[0,2],[0,3],[0,4],[1,3],[2,4],[3,5],[4,5],[3,6],[4,7],[5,6],[5,7]
-  ];
+import { useEffect, useMemo, useState } from 'react';
+import type { GraphEdge, GraphNode } from '../lib/api';
+
+interface Props {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  className?: string;
+  onSelect?: (node: GraphNode) => void;
+}
+
+interface Placed {
+  node: GraphNode;
+  x: number;
+  y: number;
+}
+
+const WIDTH = 400;
+const HEIGHT = 400;
+
+const KIND_COLOR: Record<string, string> = {
+  episodic: '#22d3ee',
+  semantic: '#34d399',
+  procedural: '#a78bfa',
+};
+
+const RELATION_STYLE: Record<string, { stroke: string; dash?: string; width: number }> = {
+  supersedes: { stroke: '#f87171', width: 1.8 },
+  derived_from: { stroke: '#34d399', width: 1.6 },
+  similar_to: { stroke: '#22d3ee', dash: '3 4', width: 1 },
+};
+
+/**
+ * Force-directed layout, run to convergence once per data change.
+ *
+ * Hand-rolled rather than pulling in d3-force: the graph is capped at a few dozen nodes, so a
+ * fixed-iteration simulation is imperceptible, and it keeps the bundle free of a dependency used in
+ * exactly one component.
+ */
+function layout(nodes: GraphNode[], edges: GraphEdge[]): Placed[] {
+  if (nodes.length === 0) return [];
+
+  const index = new Map(nodes.map((n, i) => [n.id, i]));
+
+  // Seed on a circle rather than at random: a deterministic start means the graph doesn't reshuffle
+  // on every re-render, which is disorienting to watch.
+  const positions = nodes.map((_, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2;
+    return {
+      x: WIDTH / 2 + Math.cos(angle) * (WIDTH / 3),
+      y: HEIGHT / 2 + Math.sin(angle) * (HEIGHT / 3),
+    };
+  });
+
+  const links = edges
+    .map((e) => ({ source: index.get(e.src_id), target: index.get(e.dst_id) }))
+    .filter((l): l is { source: number; target: number } => l.source !== undefined && l.target !== undefined);
+
+  const ITERATIONS = 220;
+  const REPULSION = 5200;
+  const SPRING = 0.012;
+  const IDEAL_EDGE = 74;
+
+  for (let step = 0; step < ITERATIONS; step++) {
+    // Cooling schedule — large corrections early, fine adjustments late.
+    const cooling = 1 - step / ITERATIONS;
+    const forces = positions.map(() => ({ x: 0, y: 0 }));
+
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        let dx = positions[i].x - positions[j].x;
+        let dy = positions[i].y - positions[j].y;
+        let distanceSq = dx * dx + dy * dy;
+
+        // Two nodes at the exact same point produce a zero-length vector and NaN coordinates;
+        // nudge them apart deterministically instead.
+        if (distanceSq < 0.01) {
+          dx = (i - j) * 0.1 || 0.1;
+          dy = 0.1;
+          distanceSq = dx * dx + dy * dy;
+        }
+
+        const distance = Math.sqrt(distanceSq);
+        const push = REPULSION / distanceSq;
+        forces[i].x += (dx / distance) * push;
+        forces[i].y += (dy / distance) * push;
+        forces[j].x -= (dx / distance) * push;
+        forces[j].y -= (dy / distance) * push;
+      }
+    }
+
+    for (const { source, target } of links) {
+      const dx = positions[target].x - positions[source].x;
+      const dy = positions[target].y - positions[source].y;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const pull = (distance - IDEAL_EDGE) * SPRING;
+
+      forces[source].x += (dx / distance) * pull * distance;
+      forces[source].y += (dy / distance) * pull * distance;
+      forces[target].x -= (dx / distance) * pull * distance;
+      forces[target].y -= (dy / distance) * pull * distance;
+    }
+
+    for (let i = 0; i < positions.length; i++) {
+      // Gentle pull to centre keeps disconnected components from drifting off-canvas.
+      forces[i].x += (WIDTH / 2 - positions[i].x) * 0.012;
+      forces[i].y += (HEIGHT / 2 - positions[i].y) * 0.012;
+
+      const step = 0.34 * cooling;
+      positions[i].x += Math.max(-14, Math.min(14, forces[i].x * step));
+      positions[i].y += Math.max(-14, Math.min(14, forces[i].y * step));
+
+      const margin = 26;
+      positions[i].x = Math.max(margin, Math.min(WIDTH - margin, positions[i].x));
+      positions[i].y = Math.max(margin, Math.min(HEIGHT - margin, positions[i].y));
+    }
+  }
+
+  return nodes.map((node, i) => ({ node, x: positions[i].x, y: positions[i].y }));
+}
+
+export default function KnowledgeGraph({ nodes, edges, className = '', onSelect }: Props) {
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  // Recompute only when the graph's shape changes, not on every parent render — the simulation is
+  // cheap but not free, and re-running it would make nodes visibly jump.
+  const signature = useMemo(
+    () => `${nodes.map((n) => n.id).join(',')}|${edges.map((e) => `${e.src_id}>${e.dst_id}`).join(',')}`,
+    [nodes, edges],
+  );
+
+  const [placed, setPlaced] = useState<Placed[]>([]);
+  useEffect(() => {
+    setPlaced(layout(nodes, edges));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+
+  const byId = useMemo(() => new Map(placed.map((p) => [p.node.id, p])), [placed]);
+
+  if (nodes.length === 0) {
+    return (
+      <div className={`flex items-center justify-center text-sm text-ink-500 ${className}`}>
+        No memories to graph yet.
+      </div>
+    );
+  }
+
+  const hoveredNode = hovered ? byId.get(hovered)?.node : null;
+
   return (
-    <svg viewBox="0 0 400 400" className={`w-full h-full ${className}`}>
-      <defs>
-        <linearGradient id="kgLine" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#34d399" stopOpacity="0.2" />
-        </linearGradient>
-      </defs>
-      {edges.map(([a,b],i) => (
-        <line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y}
-          stroke="url(#kgLine)" strokeWidth="1.5" strokeDasharray="4 4"
-          className="animate-pulse-slow" style={{ animationDelay: `${i * 0.25}s` }} />
+    <div className={`relative ${className}`}>
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full h-full">
+        <defs>
+          <marker id="kgArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#f87171" opacity="0.7" />
+          </marker>
+        </defs>
+
+        {edges.map((edge, i) => {
+          const source = byId.get(edge.src_id);
+          const target = byId.get(edge.dst_id);
+          if (!source || !target) return null;
+
+          const style = RELATION_STYLE[edge.relation] ?? RELATION_STYLE.similar_to;
+          const active = hovered === edge.src_id || hovered === edge.dst_id;
+
+          return (
+            <line
+              key={`${edge.src_id}-${edge.dst_id}-${edge.relation}-${i}`}
+              x1={source.x}
+              y1={source.y}
+              x2={target.x}
+              y2={target.y}
+              stroke={style.stroke}
+              strokeWidth={active ? style.width + 0.8 : style.width}
+              strokeDasharray={style.dash}
+              strokeOpacity={hovered && !active ? 0.12 : 0.5}
+              markerEnd={edge.relation === 'supersedes' ? 'url(#kgArrow)' : undefined}
+            />
+          );
+        })}
+
+        {placed.map(({ node, x, y }) => {
+          const color = KIND_COLOR[node.kind] ?? '#22d3ee';
+          const historical = node.status !== 'live';
+          const radius = 7 + Number(node.importance) * 7;
+          const dimmed = hovered !== null && hovered !== node.id;
+
+          return (
+            <g
+              key={node.id}
+              onMouseEnter={() => setHovered(node.id)}
+              onMouseLeave={() => setHovered(null)}
+              onClick={() => onSelect?.(node)}
+              style={{ cursor: onSelect ? 'pointer' : 'default' }}
+              opacity={dimmed ? 0.35 : 1}
+            >
+              <circle cx={x} cy={y} r={radius + 6} fill={color} opacity={historical ? 0.04 : 0.1} />
+              <circle
+                cx={x}
+                cy={y}
+                r={radius}
+                fill="#0a1020"
+                stroke={color}
+                strokeWidth={historical ? 1 : 2}
+                strokeDasharray={historical ? '2 2' : undefined}
+                strokeOpacity={historical ? 0.55 : 1}
+              />
+              {node.shared && (
+                <circle cx={x + radius - 1} cy={y - radius + 1} r="2.5" fill="#fbbf24" />
+              )}
+            </g>
+          );
+        })}
+      </svg>
+
+      {hoveredNode && (
+        <div className="absolute left-2 right-2 bottom-2 glass rounded-lg px-3 py-2 pointer-events-none">
+          <div className="flex items-center gap-2 mb-1">
+            <span
+              className="inline-block w-2 h-2 rounded-full"
+              style={{ backgroundColor: KIND_COLOR[hoveredNode.kind] ?? '#22d3ee' }}
+            />
+            <span className="text-[10px] font-mono text-ink-400">{hoveredNode.kind}</span>
+            {hoveredNode.status !== 'live' && (
+              <span className="text-[10px] font-mono text-amber-300">{hoveredNode.status}</span>
+            )}
+            {hoveredNode.shared && <span className="text-[10px] font-mono text-amber-300">shared</span>}
+          </div>
+          <p className="text-xs text-white leading-snug line-clamp-3">{hoveredNode.content}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Legend, exported so the dashboard can place it outside the SVG's aspect box. */
+export function GraphLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-400">
+      {Object.entries(KIND_COLOR).map(([kind, color]) => (
+        <span key={kind} className="inline-flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+          {kind}
+        </span>
       ))}
-      {nodes.map((n,i) => (
-        <g key={i}>
-          <circle cx={n.x} cy={n.y} r={n.r+6} fill={n.color} opacity="0.08" className="animate-pulse-slow" style={{ animationDelay: `${i * 0.2}s` }} />
-          <circle cx={n.x} cy={n.y} r={n.r} fill="#0a1020" stroke={n.color} strokeWidth="2" />
-          <text x={n.x} y={n.y+3} textAnchor="middle" fill="#a8b6cd" fontSize="8" fontFamily="JetBrains Mono, monospace">{n.label}</text>
-        </g>
-      ))}
-    </svg>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block w-3 h-px bg-red-400" /> supersedes
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block w-3 h-px bg-emerald-400" /> derived from
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block w-3 border-t border-dashed border-cyan-400" /> similar
+      </span>
+    </div>
   );
 }
