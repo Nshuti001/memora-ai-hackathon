@@ -32,6 +32,9 @@ function bedrockClient(): BedrockRuntimeClient {
  */
 let autoUseLocalOnly = false;
 
+/** Latched once Titan proves unavailable, so auto stops retrying it on every write. */
+let autoSkipTitan = false;
+
 /**
  * Scale a vector to unit length.
  *
@@ -147,6 +150,50 @@ async function bedrockEmbed(text: string): Promise<number[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Cohere Embed v3 on Bedrock
+// ---------------------------------------------------------------------------
+
+/**
+ * Cohere's embeddings are asymmetric: a stored passage and the question that should retrieve it are
+ * embedded with different `input_type` values, and the model is trained so those two spaces line up.
+ * Using `search_document` for a query measurably degrades retrieval, so the caller's intent has to
+ * reach this far down rather than being guessed here.
+ */
+export type EmbedPurpose = 'document' | 'query';
+
+async function cohereEmbed(text: string, purpose: EmbedPurpose): Promise<number[]> {
+  const command = new InvokeModelCommand({
+    modelId: config.cohereEmbedModelId,
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify({
+      texts: [text],
+      input_type: purpose === 'query' ? 'search_query' : 'search_document',
+      truncate: 'END',
+    }),
+  });
+
+  const response = await bedrockClient().send(command);
+  const payload = JSON.parse(new TextDecoder().decode(response.body)) as {
+    embeddings?: number[][] | { float?: number[][] };
+  };
+
+  // Cohere returns `embeddings` as a bare array, or as { float: [...] } when embedding_types is set.
+  const raw = Array.isArray(payload.embeddings)
+    ? payload.embeddings[0]
+    : payload.embeddings?.float?.[0];
+
+  if (!raw || raw.length !== EMBED_DIM) {
+    throw new Error(
+      `Cohere returned ${raw?.length ?? 0} dimensions, expected ${EMBED_DIM}. ` +
+        `If you changed COHERE_EMBED_MODEL_ID, update EMBED_DIM and the VECTOR(...) column together.`,
+    );
+  }
+
+  return toUnitVector(raw);
+}
+
+// ---------------------------------------------------------------------------
 
 /** Identifier for the lexical stand-in. Versioned so a change to the algorithm invalidates cached vectors. */
 export const LOCAL_MODEL_ID = 'local-lexical-v1';
@@ -166,7 +213,12 @@ export interface Embedding {
 export function activeEmbeddingModel(): string {
   if (config.embeddingProvider === 'local') return LOCAL_MODEL_ID;
   if (config.embeddingProvider === 'bedrock') return config.embedModelId;
-  return autoUseLocalOnly ? LOCAL_MODEL_ID : config.embedModelId;
+  if (config.embeddingProvider === 'cohere') return config.cohereEmbedModelId;
+
+  // auto: Titan, then Cohere, then local — degraded one step at a time as each proves unavailable.
+  if (autoUseLocalOnly) return LOCAL_MODEL_ID;
+  if (autoSkipTitan) return config.cohereEmbedModelId;
+  return config.embedModelId;
 }
 
 const cache = new Map<string, number[]>();
@@ -222,18 +274,24 @@ async function writeCache(model: string, text: string, vector: number[]): Promis
  * Three cache layers, cheapest first: an in-process map for the current conversation, a CockroachDB
  * table shared by every instance and surviving restarts, then the model itself.
  */
-export async function embed(text: string): Promise<Embedding> {
+export async function embed(text: string, purpose: EmbedPurpose = 'document'): Promise<Embedding> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('Cannot embed empty text');
 
   const wanted = activeEmbeddingModel();
-  const key = `${wanted}:${trimmed}`;
+
+  // Cohere embeds a passage and a question differently on purpose, so the two must not share a cache
+  // entry. Titan and the local provider ignore purpose, and collapsing the key for them keeps a
+  // query and the memory it retrieves sharing one cached vector.
+  const purposeKey = wanted === config.cohereEmbedModelId ? purpose : 'x';
+  const key = `${wanted}:${purposeKey}:${trimmed}`;
+  const cacheModelKey = `${wanted}#${purposeKey}`;
 
   const hot = cache.get(key);
   if (hot) return { vector: hot, model: wanted };
 
   if (wanted !== LOCAL_MODEL_ID) {
-    const persisted = await readCache(wanted, trimmed);
+    const persisted = await readCache(cacheModelKey, trimmed);
     if (persisted) {
       cache.set(key, persisted);
       return { vector: persisted, model: wanted };
@@ -247,45 +305,74 @@ export async function embed(text: string): Promise<Embedding> {
     vector = localEmbed(trimmed);
   } else if (config.embeddingProvider === 'bedrock') {
     vector = await bedrockEmbed(trimmed);
+  } else if (config.embeddingProvider === 'cohere') {
+    vector = await cohereEmbed(trimmed, purpose);
   } else {
-    // auto: prefer Titan, fall back to local on throttle/outage so recall still works. The returned
-    // model changes with it, so the caller stores what actually produced this vector.
-    try {
-      vector = await bedrockEmbed(trimmed);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      autoUseLocalOnly = true;
-      model = LOCAL_MODEL_ID;
-      console.warn(
-        `[embeddings] Bedrock unavailable (${message.slice(0, 120)}). Falling back to local embeddings for this process.`,
-      );
-      vector = localEmbed(trimmed);
-    }
+    // auto: Titan, then Cohere, then local. Each fallback is latched for the process so a throttled
+    // provider is not retried on every write, and `model` follows the demotion so the caller records
+    // what actually produced this vector.
+    const attempt = async (): Promise<number[]> => {
+      if (!autoSkipTitan) {
+        try {
+          return await bedrockEmbed(trimmed);
+        } catch (err) {
+          autoSkipTitan = true;
+          console.warn(
+            `[embeddings] Titan unavailable (${short(err)}). Trying Cohere for this process.`,
+          );
+        }
+      }
+
+      try {
+        model = config.cohereEmbedModelId;
+        return await cohereEmbed(trimmed, purpose);
+      } catch (err) {
+        autoUseLocalOnly = true;
+        model = LOCAL_MODEL_ID;
+        console.warn(
+          `[embeddings] Cohere unavailable (${short(err)}). Falling back to local embeddings — ` +
+            `these are lexical only, not semantic.`,
+        );
+        return localEmbed(trimmed);
+      }
+    };
+
+    vector = autoUseLocalOnly ? localEmbed(trimmed) : await attempt();
+    if (autoUseLocalOnly) model = LOCAL_MODEL_ID;
   }
 
-  if (model !== LOCAL_MODEL_ID) void writeCache(model, trimmed, vector);
+  const finalPurposeKey = model === config.cohereEmbedModelId ? purpose : 'x';
+  if (model !== LOCAL_MODEL_ID) void writeCache(`${model}#${finalPurposeKey}`, trimmed, vector);
 
   if (cache.size >= CACHE_LIMIT) {
     // Cheap FIFO eviction — this is a hot-path cache for one conversation, not a durable store.
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
   }
-  cache.set(`${model}:${trimmed}`, vector);
+  cache.set(`${model}:${finalPurposeKey}:${trimmed}`, vector);
 
   return { vector, model };
 }
 
+function short(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).slice(0, 100);
+}
+
 /** Embeds many texts sequentially. Deliberately serial — parallel calls trip Bedrock's rate limit. */
-export async function embedBatch(texts: string[]): Promise<Embedding[]> {
+export async function embedBatch(
+  texts: string[],
+  purpose: EmbedPurpose = 'document',
+): Promise<Embedding[]> {
   const results: Embedding[] = [];
-  for (const text of texts) results.push(await embed(text));
+  for (const text of texts) results.push(await embed(text, purpose));
   return results;
 }
 
-/** Test seam — the in-process cache is module-global. */
+/** Test seam — the in-process cache and fallback latches are module-global. */
 export function resetEmbeddingCache(): void {
   cache.clear();
   autoUseLocalOnly = false;
+  autoSkipTitan = false;
 }
 
 /** L2 distance between two vectors — mirrors what CockroachDB's <-> operator computes. */

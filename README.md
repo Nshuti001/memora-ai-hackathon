@@ -127,8 +127,15 @@ Two Agent Skills encode the CockroachDB expertise this project accumulated, in t
 - **Amazon Bedrock — Claude Sonnet 4.6.** Runs the agent loop with five memory tools and streaming,
   via the Global inference profile (`global.anthropic.claude-sonnet-4-6`) and classic
   `AnthropicBedrock`; see [agent.ts](server/src/agent.ts).
-- **Amazon Bedrock — Titan Text Embeddings V2.** Turns every memory and query into the 1024-dimension
-  vectors CockroachDB indexes.
+- **Amazon Bedrock — embeddings.** Every memory and query becomes a 1024-dimension vector that
+  CockroachDB indexes. Two interchangeable models are supported at that exact width, **Amazon Titan
+  Text Embeddings V2** and **Cohere Embed v3**, selected by `EMBEDDING_PROVIDER`. `auto` demotes
+  Titan → Cohere → offline stand-in one step at a time, and records which model produced each vector
+  so the two spaces are never compared (see *Embedding provenance* below).
+
+  Cohere is used asymmetrically the way it is designed to be: a stored memory is embedded with
+  `search_document` and a question with `search_query`. Embedding a query as a document measurably
+  degrades retrieval, so the caller's intent is threaded all the way down rather than guessed.
 - **AWS Lambda.** Hosts the agent loop and memory API. The connection pool is module-scoped so it
   survives across invocations — reconnecting per request would dominate response time and exhaust the
   cluster's connection limit.

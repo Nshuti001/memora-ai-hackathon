@@ -165,7 +165,7 @@ export async function recall(opts: {
 }): Promise<RecalledMemory[]> {
   const limit = opts.limit ?? 6;
   const started = Date.now();
-  const embedded = await embed(opts.query);
+  const embedded = await embed(opts.query, 'query');
   const vector = toVectorLiteral(embedded.vector);
 
   const rows = await query<Memory & { distance: string }>(
