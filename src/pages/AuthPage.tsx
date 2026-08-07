@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Mail, Lock, User as UserIcon, ArrowRight, AlertTriangle, Loader2 } from 'lucide-react';
 import Logo from '../components/Logo';
+import ThemeToggle from '../components/ThemeToggle';
 import { navigateTo } from '../router';
 import { getUser, signIn, signUp } from '../lib/auth';
 
@@ -46,17 +47,22 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-20 relative overflow-hidden">
       <div className="absolute inset-0 grid-bg radial-fade" />
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-brand-500/15 blur-[120px] animate-glow" />
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-accent/[0.12] blur-[120px] animate-glow" />
+
+      {/* The auth screens render without the navbar, so the toggle needs its own home here. */}
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10">
+        <ThemeToggle />
+      </div>
 
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex mb-6">
             <Logo onClick={() => navigateTo('home')} />
           </div>
-          <h1 className="font-display text-3xl font-bold text-white">
+          <h1 className="font-display text-3xl font-bold text-content">
             {isSignup ? 'Create your account' : 'Welcome back'}
           </h1>
-          <p className="mt-2 text-sm text-ink-400">
+          <p className="mt-2 text-sm text-content-subtle">
             {isSignup
               ? 'Your agent gets its own private memory workspace.'
               : 'Sign in to your Memora AI dashboard.'}
@@ -67,27 +73,27 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
           {error && (
             <div
               role="alert"
-              className="mb-5 flex items-start gap-2.5 rounded-xl border border-red-500/25 bg-red-500/[0.07] px-3 py-2.5"
+              className="mb-5 flex items-start gap-2.5 rounded-xl border border-danger/30 bg-danger/[0.08] px-3 py-2.5"
             >
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-red-200 leading-relaxed">{error}</p>
+              <AlertTriangle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
+              <p className="text-sm text-danger leading-relaxed">{error}</p>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             {isSignup && (
               <div>
-                <label htmlFor="name" className="block text-xs font-medium text-ink-300 mb-1.5">
+                <label htmlFor="name" className="block text-xs font-medium text-content-muted mb-1.5">
                   Full name
                 </label>
                 <div className="relative">
-                  <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-500" />
+                  <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-subtle" />
                   <input
                     id="name"
                     autoComplete="name"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="w-full bg-ink-900/50 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors"
+                    className="w-full bg-surface-sunken rounded-xl pl-10 pr-4 py-2.5 text-sm text-content placeholder:text-content-subtle border border-line/[0.10] focus:border-accent/40 focus:outline-none transition-colors"
                     placeholder="Jane Doe"
                   />
                 </div>
@@ -95,11 +101,11 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
             )}
 
             <div>
-              <label htmlFor="email" className="block text-xs font-medium text-ink-300 mb-1.5">
+              <label htmlFor="email" className="block text-xs font-medium text-content-muted mb-1.5">
                 Email
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-500" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-subtle" />
                 <input
                   id="email"
                   required
@@ -107,18 +113,18 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
                   autoComplete="email"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full bg-ink-900/50 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors"
+                  className="w-full bg-surface-sunken rounded-xl pl-10 pr-4 py-2.5 text-sm text-content placeholder:text-content-subtle border border-line/[0.10] focus:border-accent/40 focus:outline-none transition-colors"
                   placeholder="jane@company.com"
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-xs font-medium text-ink-300 mb-1.5">
+              <label htmlFor="password" className="block text-xs font-medium text-content-muted mb-1.5">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-content-subtle" />
                 <input
                   id="password"
                   required
@@ -126,16 +132,16 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
                   autoComplete={isSignup ? 'new-password' : 'current-password'}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className={`w-full bg-ink-900/50 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-ink-500 border focus:outline-none transition-colors ${
+                  className={`w-full bg-surface-sunken rounded-xl pl-10 pr-4 py-2.5 text-sm text-content placeholder:text-content-subtle border focus:outline-none transition-colors ${
                     passwordTooShort
-                      ? 'border-amber-500/40 focus:border-amber-400/50'
-                      : 'border-white/[0.06] focus:border-brand-400/30'
+                      ? 'border-warning/50 focus:border-warning/60'
+                      : 'border-line/[0.10] focus:border-accent/40'
                   }`}
                   placeholder="••••••••"
                 />
               </div>
               {isSignup && (
-                <p className={`mt-1.5 text-[11px] ${passwordTooShort ? 'text-amber-300' : 'text-ink-500'}`}>
+                <p className={`mt-1.5 text-[11px] ${passwordTooShort ? 'text-warning' : 'text-content-subtle'}`}>
                   At least 8 characters.
                 </p>
               )}
@@ -160,18 +166,18 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
             </button>
           </form>
 
-          <p className="text-center text-sm text-ink-400 mt-6">
+          <p className="text-center text-sm text-content-subtle mt-6">
             {isSignup ? 'Already have an account? ' : "Don't have an account? "}
             <button
               onClick={() => navigateTo(isSignup ? 'login' : 'signup')}
-              className="text-brand-400 hover:text-brand-300 font-medium transition-colors"
+              className="text-accent hover:text-accent font-medium transition-colors"
             >
               {isSignup ? 'Sign in' : 'Sign up'}
             </button>
           </p>
         </div>
 
-        <p className="text-center text-xs text-ink-500 mt-6">
+        <p className="text-center text-xs text-content-subtle mt-6">
           Passwords are hashed with scrypt; session tokens are stored only as a hash server-side.
         </p>
       </div>

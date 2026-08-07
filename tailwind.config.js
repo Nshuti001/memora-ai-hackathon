@@ -4,12 +4,40 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      screens: {
+        // Touch targets belong on touch devices, not on narrow windows. A 768px iPad needs the
+        // bigger hit area; a 500px-wide desktop browser does not. `sm:` cannot tell them apart.
+        coarse: { raw: '(pointer: coarse)' },
+      },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         display: ['Space Grotesk', 'Inter', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
+        // Semantic tokens — these resolve to different values per theme (see index.css).
+        // Prefer these over raw ink/brand shades in components; a raw shade is dark-mode-only by
+        // definition and is what makes a light theme look half-finished.
+        surface: {
+          DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
+          raised: 'rgb(var(--surface-raised) / <alpha-value>)',
+          sunken: 'rgb(var(--surface-sunken) / <alpha-value>)',
+        },
+        content: {
+          DEFAULT: 'rgb(var(--content) / <alpha-value>)',
+          muted: 'rgb(var(--content-muted) / <alpha-value>)',
+          subtle: 'rgb(var(--content-subtle) / <alpha-value>)',
+        },
+        line: 'rgb(var(--line) / <alpha-value>)',
+        accent: {
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          bright: 'rgb(var(--accent-bright) / <alpha-value>)',
+          contrast: 'rgb(var(--accent-contrast) / <alpha-value>)',
+        },
+        positive: 'rgb(var(--positive) / <alpha-value>)',
+        warning: 'rgb(var(--warning) / <alpha-value>)',
+        danger: 'rgb(var(--danger) / <alpha-value>)',
+
         ink: {
           50: '#f5f7fa',
           100: '#e9eef5',

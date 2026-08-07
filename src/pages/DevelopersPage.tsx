@@ -105,13 +105,13 @@ export default function DevelopersPage() {
     <div className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="max-w-3xl mx-auto text-center mb-16">
-          <span className="text-sm font-semibold text-brand-400 tracking-wide uppercase">Developer Portal</span>
-          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-white">
+          <span className="text-sm font-semibold text-accent tracking-wide uppercase">Developer Portal</span>
+          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-content">
             Build agents that
             <br />
             <span className="text-gradient-brand">never forget</span>
           </h1>
-          <p className="mt-6 text-lg text-ink-300 max-w-2xl mx-auto">
+          <p className="mt-6 text-lg text-content-muted max-w-2xl mx-auto">
             Integrate Memora AI in under five minutes. REST APIs, official SDKs,
             and webhooks for every language and stack.
           </p>
@@ -125,7 +125,7 @@ export default function DevelopersPage() {
                 key={sdk.name}
                 onClick={() => setActiveSdk(sdk.name)}
                 className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
-                  activeSdk === sdk.name ? 'bg-brand-500/15 text-brand-300 border border-brand-500/20' : 'glass text-ink-300 hover:text-white'
+                  activeSdk === sdk.name ? 'bg-accent/[0.12] text-accent border border-accent/25' : 'glass text-content-muted hover:text-content'
                 }`}
               >
                 <sdk.icon className="w-4 h-4" />
@@ -136,25 +136,25 @@ export default function DevelopersPage() {
 
           {/* Install command */}
           <div className="flex items-center justify-between glass rounded-xl px-4 py-3 mb-4">
-            <code className="text-sm font-mono text-ink-200">
+            <code className="text-sm font-mono text-content-muted">
               {sdks.find((s) => s.name === activeSdk)!.install}
             </code>
-            <button onClick={copyInstall} className="text-ink-400 hover:text-white transition-colors">
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            <button onClick={copyInstall} className="text-content-subtle hover:text-content transition-colors">
+              {copied ? <Check className="w-4 h-4 text-positive" /> : <Copy className="w-4 h-4" />}
             </button>
           </div>
 
           {/* Code example */}
-          <div className="rounded-xl overflow-hidden bg-ink-960 border border-white/[0.06]">
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.06]">
+          <div className="rounded-xl overflow-hidden bg-surface border border-line/[0.10]">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line/[0.10]">
               <div className="flex gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-red-400/60" />
-                <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/60" />
-                <div className="w-2.5 h-2.5 rounded-full bg-green-400/60" />
+                <div className="w-2.5 h-2.5 rounded-full bg-red-400 dark:bg-red-400/60" />
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 dark:bg-yellow-400/60" />
+                <div className="w-2.5 h-2.5 rounded-full bg-green-400 dark:bg-green-400/60" />
               </div>
-              <span className="text-xs text-ink-500 ml-2 font-mono">example.{activeSdk === 'TypeScript' ? 'ts' : activeSdk === 'Python' ? 'py' : activeSdk === 'Go' ? 'go' : 'rs'}</span>
+              <span className="text-xs text-content-subtle ml-2 font-mono">example.{activeSdk === 'TypeScript' ? 'ts' : activeSdk === 'Python' ? 'py' : activeSdk === 'Go' ? 'go' : 'rs'}</span>
             </div>
-            <pre className="p-5 text-sm font-mono leading-relaxed overflow-x-auto text-ink-200">
+            <pre className="p-5 text-sm font-mono leading-relaxed overflow-x-auto text-content-muted">
               <code>{codeExamples[activeSdk]}</code>
             </pre>
           </div>
@@ -163,13 +163,13 @@ export default function DevelopersPage() {
         {/* Feature grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-12">
           {features.map((f, i) => (
-            <div key={i} className="group glass rounded-2xl p-6 hover:bg-white/[0.05] transition-all duration-300 hover:-translate-y-1 flex gap-5">
-              <div className="shrink-0 w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center group-hover:bg-brand-500/20 transition-colors">
-                <f.icon className="w-6 h-6 text-brand-400" strokeWidth={1.75} />
+            <div key={i} className="group glass rounded-2xl p-6 hover:bg-line/[0.05] transition-all duration-300 hover:-translate-y-1 flex gap-5">
+              <div className="shrink-0 w-12 h-12 rounded-xl bg-accent/[0.10] border border-accent/25 flex items-center justify-center group-hover:bg-accent/[0.15] transition-colors">
+                <f.icon className="w-6 h-6 text-accent" strokeWidth={1.75} />
               </div>
               <div>
-                <h3 className="font-display text-lg font-semibold text-white mb-2">{f.title}</h3>
-                <p className="text-sm text-ink-300 leading-relaxed">{f.desc}</p>
+                <h3 className="font-display text-lg font-semibold text-content mb-2">{f.title}</h3>
+                <p className="text-sm text-content-muted leading-relaxed">{f.desc}</p>
               </div>
             </div>
           ))}
@@ -182,12 +182,12 @@ export default function DevelopersPage() {
             { title: 'Quick Start Guide', desc: 'Get from zero to remembering in 5 minutes.', action: 'Read guide', route: 'docs' as const },
             { title: 'Community', desc: 'Join our Discord and GitHub discussions.', action: 'Join us', route: 'contact' as const },
           ].map((r, i) => (
-            <div key={i} className="glass rounded-2xl p-5 hover:bg-white/[0.04] transition-all">
-              <h3 className="text-sm font-semibold text-white mb-1.5">{r.title}</h3>
-              <p className="text-xs text-ink-400 mb-3">{r.desc}</p>
+            <div key={i} className="glass rounded-2xl p-5 hover:bg-line/[0.04] transition-all">
+              <h3 className="text-sm font-semibold text-content mb-1.5">{r.title}</h3>
+              <p className="text-xs text-content-subtle mb-3">{r.desc}</p>
               <button
                 onClick={() => navigateTo(r.route)}
-                className="group inline-flex items-center gap-1.5 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors"
+                className="group inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-accent transition-colors"
               >
                 {r.action}
                 <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />

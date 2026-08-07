@@ -61,12 +61,12 @@ export default function PricingPage() {
     <div className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="max-w-2xl mx-auto text-center mb-16">
-          <span className="text-sm font-semibold text-brand-400 tracking-wide uppercase">Pricing</span>
-          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-white">
+          <span className="text-sm font-semibold text-accent tracking-wide uppercase">Pricing</span>
+          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-content">
             Pay for what your agents{' '}
             <span className="text-gradient-brand">remember</span>
           </h1>
-          <p className="mt-6 text-lg text-ink-300">
+          <p className="mt-6 text-lg text-content-muted">
             Start free. Scale when your agents do. No hidden fees.
           </p>
         </div>
@@ -77,7 +77,7 @@ export default function PricingPage() {
               key={i}
               className={`relative rounded-2xl p-8 flex flex-col ${
                 tier.highlighted
-                  ? 'glass-strong border-brand-500/30 shadow-2xl shadow-brand-500/10 lg:-translate-y-4'
+                  ? 'glass-strong border-accent/30 shadow-2xl shadow-brand-500/10 lg:-translate-y-4'
                   : 'glass'
               }`}
             >
@@ -88,19 +88,19 @@ export default function PricingPage() {
               )}
 
               <div className="mb-6">
-                <h3 className="font-display text-lg font-semibold text-white">{tier.name}</h3>
-                <p className="mt-1 text-sm text-ink-400">{tier.desc}</p>
+                <h3 className="font-display text-lg font-semibold text-content">{tier.name}</h3>
+                <p className="mt-1 text-sm text-content-subtle">{tier.desc}</p>
               </div>
 
               <div className="mb-6">
-                <span className="font-display text-4xl font-bold text-white">{tier.price}</span>
-                <span className="text-ink-400 text-sm">{tier.period}</span>
+                <span className="font-display text-4xl font-bold text-content">{tier.price}</span>
+                <span className="text-content-subtle text-sm">{tier.period}</span>
               </div>
 
               <ul className="space-y-3 mb-8 flex-1">
                 {tier.features.map((f, j) => (
-                  <li key={j} className="flex items-start gap-3 text-sm text-ink-200">
-                    <Check className={`shrink-0 w-4 h-4 mt-0.5 ${tier.highlighted ? 'text-brand-400' : 'text-emerald-400'}`} />
+                  <li key={j} className="flex items-start gap-3 text-sm text-content-muted">
+                    <Check className={`shrink-0 w-4 h-4 mt-0.5 ${tier.highlighted ? 'text-accent' : 'text-positive'}`} />
                     {f}
                   </li>
                 ))}
@@ -111,7 +111,7 @@ export default function PricingPage() {
                 className={`group inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-all duration-200 ${
                   tier.highlighted
                     ? 'bg-gradient-to-r from-brand-400 to-brand-500 text-ink-950 hover:shadow-lg hover:shadow-brand-500/30'
-                    : 'glass text-white hover:bg-white/[0.06]'
+                    : 'glass text-content hover:bg-line/[0.06]'
                 }`}
               >
                 {tier.cta}
@@ -123,7 +123,7 @@ export default function PricingPage() {
 
         {/* FAQ */}
         <div className="max-w-3xl mx-auto mt-20">
-          <h2 className="font-display text-2xl font-bold text-white text-center mb-8">Frequently asked questions</h2>
+          <h2 className="font-display text-2xl font-bold text-content text-center mb-8">Frequently asked questions</h2>
           <div className="space-y-4">
             {[
               { q: 'What counts as a memory?', a: 'A memory is any stored piece of information your agent writes via the API — a fact, a preference, a decision, or a conversation summary. Reads (recalls) are free.' },
@@ -133,8 +133,8 @@ export default function PricingPage() {
               { q: 'What models are supported?', a: 'Memora works with any LLM via Amazon Bedrock — Claude, Llama, Mistral, and more. You can also bring your own model.' },
             ].map((faq, i) => (
               <div key={i} className="glass rounded-2xl p-5">
-                <h3 className="text-sm font-semibold text-white mb-2">{faq.q}</h3>
-                <p className="text-sm text-ink-300 leading-relaxed">{faq.a}</p>
+                <h3 className="text-sm font-semibold text-content mb-2">{faq.q}</h3>
+                <p className="text-sm text-content-muted leading-relaxed">{faq.a}</p>
               </div>
             ))}
           </div>

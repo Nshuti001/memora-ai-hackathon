@@ -14,13 +14,13 @@ export default function ContactPage() {
     <div className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="max-w-3xl mx-auto text-center mb-16">
-          <span className="text-sm font-semibold text-brand-400 tracking-wide uppercase">Contact</span>
-          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-white">
+          <span className="text-sm font-semibold text-accent tracking-wide uppercase">Contact</span>
+          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-content">
             Let's build something
             <br />
             <span className="text-gradient-brand">unforgettable</span>
           </h1>
-          <p className="mt-6 text-lg text-ink-300 max-w-2xl mx-auto">
+          <p className="mt-6 text-lg text-content-muted max-w-2xl mx-auto">
             Whether you're evaluating Memora for your team or need help with
             integration, we'd love to hear from you.
           </p>
@@ -36,13 +36,13 @@ export default function ContactPage() {
             ].map((c, i) => (
               <div key={i} className="glass rounded-2xl p-5">
                 <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
-                    <c.icon className="w-5 h-5 text-brand-400" strokeWidth={1.75} />
+                  <div className="shrink-0 w-10 h-10 rounded-xl bg-accent/[0.10] border border-accent/25 flex items-center justify-center">
+                    <c.icon className="w-5 h-5 text-accent" strokeWidth={1.75} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">{c.title}</h3>
-                    <p className="text-sm text-brand-300 mt-0.5">{c.value}</p>
-                    <p className="text-xs text-ink-400 mt-1">{c.desc}</p>
+                    <h3 className="text-sm font-semibold text-content">{c.title}</h3>
+                    <p className="text-sm text-accent mt-0.5">{c.value}</p>
+                    <p className="text-xs text-content-subtle mt-1">{c.desc}</p>
                   </div>
                 </div>
               </div>
@@ -54,16 +54,16 @@ export default function ContactPage() {
             <div className="glass-strong rounded-2xl p-6 sm:p-8">
               {submitted ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center mb-4">
-                    <Check className="w-8 h-8 text-emerald-400" />
+                  <div className="w-16 h-16 rounded-full bg-positive/15 border border-positive/25 flex items-center justify-center mb-4">
+                    <Check className="w-8 h-8 text-positive" />
                   </div>
-                  <h3 className="font-display text-xl font-semibold text-white mb-2">Message sent!</h3>
-                  <p className="text-sm text-ink-300 max-w-sm">
+                  <h3 className="font-display text-xl font-semibold text-content mb-2">Message sent!</h3>
+                  <p className="text-sm text-content-muted max-w-sm">
                     Thanks for reaching out. Our team will get back to you within 24 hours.
                   </p>
                   <button
                     onClick={() => { setSubmitted(false); setForm({ name: '', email: '', company: '', message: '' }); }}
-                    className="mt-6 text-sm font-medium text-brand-400 hover:text-brand-300 transition-colors"
+                    className="mt-6 text-sm font-medium text-accent hover:text-accent transition-colors"
                   >
                     Send another message
                   </button>
@@ -72,44 +72,44 @@ export default function ContactPage() {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-ink-300 mb-1.5">Name</label>
+                      <label className="block text-xs font-medium text-content-muted mb-1.5">Name</label>
                       <input
                         required
                         value={form.name}
                         onChange={(e) => setForm({ ...form, name: e.target.value })}
-                        className="w-full bg-ink-900/50 rounded-xl px-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors"
+                        className="w-full bg-surface-sunken rounded-xl px-4 py-2.5 text-sm text-content placeholder:text-content-subtle border border-line/[0.10] focus:border-accent/40 focus:outline-none transition-colors"
                         placeholder="Jane Doe"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-ink-300 mb-1.5">Email</label>
+                      <label className="block text-xs font-medium text-content-muted mb-1.5">Email</label>
                       <input
                         required
                         type="email"
                         value={form.email}
                         onChange={(e) => setForm({ ...form, email: e.target.value })}
-                        className="w-full bg-ink-900/50 rounded-xl px-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors"
+                        className="w-full bg-surface-sunken rounded-xl px-4 py-2.5 text-sm text-content placeholder:text-content-subtle border border-line/[0.10] focus:border-accent/40 focus:outline-none transition-colors"
                         placeholder="jane@company.com"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-ink-300 mb-1.5">Company</label>
+                    <label className="block text-xs font-medium text-content-muted mb-1.5">Company</label>
                     <input
                       value={form.company}
                       onChange={(e) => setForm({ ...form, company: e.target.value })}
-                      className="w-full bg-ink-900/50 rounded-xl px-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors"
+                      className="w-full bg-surface-sunken rounded-xl px-4 py-2.5 text-sm text-content placeholder:text-content-subtle border border-line/[0.10] focus:border-accent/40 focus:outline-none transition-colors"
                       placeholder="Acme Inc."
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-ink-300 mb-1.5">Message</label>
+                    <label className="block text-xs font-medium text-content-muted mb-1.5">Message</label>
                     <textarea
                       required
                       rows={5}
                       value={form.message}
                       onChange={(e) => setForm({ ...form, message: e.target.value })}
-                      className="w-full bg-ink-900/50 rounded-xl px-4 py-2.5 text-sm text-white placeholder-ink-500 border border-white/[0.06] focus:border-brand-400/30 focus:outline-none transition-colors resize-none"
+                      className="w-full bg-surface-sunken rounded-xl px-4 py-2.5 text-sm text-content placeholder:text-content-subtle border border-line/[0.10] focus:border-accent/40 focus:outline-none transition-colors resize-none"
                       placeholder="Tell us about your use case..."
                     />
                   </div>

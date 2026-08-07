@@ -110,10 +110,10 @@ const endpoints = [
 ];
 
 const methodColors: Record<string, string> = {
-  GET: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-  POST: 'text-brand-400 bg-brand-500/10 border-brand-500/20',
-  DELETE: 'text-red-400 bg-red-500/10 border-red-500/20',
-  PUT: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
+  GET: 'text-positive bg-positive/10 border-positive/25',
+  POST: 'text-accent bg-accent/[0.10] border-accent/25',
+  DELETE: 'text-danger bg-danger/10 border-danger/30',
+  PUT: 'text-warning bg-warning/10 border-warning/25',
 };
 
 export default function DocsPage() {
@@ -131,13 +131,13 @@ export default function DocsPage() {
     <div className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="max-w-3xl mx-auto text-center mb-16">
-          <span className="text-sm font-semibold text-brand-400 tracking-wide uppercase">Documentation</span>
-          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-white">
+          <span className="text-sm font-semibold text-accent tracking-wide uppercase">Documentation</span>
+          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-content">
             Interactive API
             <br />
             <span className="text-gradient-brand">documentation</span>
           </h1>
-          <p className="mt-6 text-lg text-ink-300 max-w-2xl mx-auto">
+          <p className="mt-6 text-lg text-content-muted max-w-2xl mx-auto">
             Everything you need to integrate Memora AI into your agents.
             Copy, paste, and start remembering.
           </p>
@@ -148,16 +148,16 @@ export default function DocsPage() {
           <div className="lg:col-span-3">
             <div className="glass rounded-2xl p-4 sticky top-28">
               <div className="flex items-center gap-2 mb-4 px-2">
-                <Book className="w-4 h-4 text-brand-400" />
-                <span className="text-sm font-semibold text-white">API Reference</span>
+                <Book className="w-4 h-4 text-accent" />
+                <span className="text-sm font-semibold text-content">API Reference</span>
               </div>
               <nav className="space-y-1">
                 {endpoints.map((ep, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveIdx(i)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${
-                      activeIdx === i ? 'bg-brand-500/10 text-brand-300' : 'text-ink-300 hover:bg-white/[0.04] hover:text-white'
+                    className={`w-full flex items-center gap-2 px-3 py-2 coarse:py-2.5 coarse:min-h-[44px] rounded-lg text-left transition-all ${
+                      activeIdx === i ? 'bg-accent/[0.10] text-accent' : 'text-content-muted hover:bg-line/[0.04] hover:text-content'
                     }`}
                   >
                     <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${methodColors[ep.method]}`}>
@@ -168,14 +168,14 @@ export default function DocsPage() {
                 ))}
               </nav>
 
-              <div className="mt-6 pt-4 border-t border-white/[0.06] space-y-1">
-                <div className="flex items-center gap-2 px-3 py-2 text-xs text-ink-400">
+              <div className="mt-6 pt-4 border-t border-line/[0.10] space-y-1">
+                <div className="flex items-center gap-2 px-3 py-2 text-xs text-content-subtle">
                   <Key className="w-3.5 h-3.5" /> Authentication
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 text-xs text-ink-400">
+                <div className="flex items-center gap-2 px-3 py-2 text-xs text-content-subtle">
                   <Webhook className="w-3.5 h-3.5" /> Webhooks
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 text-xs text-ink-400">
+                <div className="flex items-center gap-2 px-3 py-2 text-xs text-content-subtle">
                   <Code2 className="w-3.5 h-3.5" /> SDKs
                 </div>
               </div>
@@ -190,66 +190,66 @@ export default function DocsPage() {
                 <span className={`text-xs font-mono font-bold px-2 py-1 rounded border ${methodColors[active.method]}`}>
                   {active.method}
                 </span>
-                <code className="text-sm font-mono text-ink-200">{active.path}</code>
+                <code className="text-sm font-mono text-content-muted">{active.path}</code>
               </div>
-              <h2 className="font-display text-xl font-semibold text-white mb-2">{active.title}</h2>
-              <p className="text-sm text-ink-300 leading-relaxed">{active.desc}</p>
+              <h2 className="font-display text-xl font-semibold text-content mb-2">{active.title}</h2>
+              <p className="text-sm text-content-muted leading-relaxed">{active.desc}</p>
             </div>
 
             {/* Request */}
             <div className="glass rounded-2xl overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06]">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-line/[0.10]">
                 <div className="flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-brand-400" />
-                  <span className="text-sm font-medium text-white">Request</span>
+                  <Terminal className="w-4 h-4 text-accent" />
+                  <span className="text-sm font-medium text-content">Request</span>
                 </div>
                 <button
                   onClick={copyCode}
-                  className="flex items-center gap-1.5 text-xs text-ink-400 hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 -mr-2 px-2 coarse:min-h-[44px] rounded-lg text-xs text-content-subtle hover:text-content hover:bg-line/[0.06] transition-colors"
                 >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? <Check className="w-3.5 h-3.5 text-positive" /> : <Copy className="w-3.5 h-3.5" />}
                   {copied ? 'Copied' : 'Copy'}
                 </button>
               </div>
-              <pre className="p-5 text-sm font-mono leading-relaxed overflow-x-auto text-ink-200">
+              <pre className="p-5 text-sm font-mono leading-relaxed overflow-x-auto text-content-muted">
                 <code>{active.code}</code>
               </pre>
             </div>
 
             {/* Response */}
             <div className="glass rounded-2xl overflow-hidden">
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-white/[0.06]">
-                <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-sm font-medium text-white">Response · 200 OK</span>
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-line/[0.10]">
+                <div className="w-2 h-2 rounded-full bg-positive" />
+                <span className="text-sm font-medium text-content">Response · 200 OK</span>
               </div>
-              <pre className="p-5 text-sm font-mono leading-relaxed overflow-x-auto text-emerald-300/80">
+              <pre className="p-5 text-sm font-mono leading-relaxed overflow-x-auto text-positive dark:text-positive/80">
                 <code>{active.response}</code>
               </pre>
             </div>
 
             {/* Quick start */}
             <div className="glass-strong rounded-2xl p-6">
-              <h3 className="font-display text-lg font-semibold text-white mb-4">Quick Start</h3>
+              <h3 className="font-display text-lg font-semibold text-content mb-4">Quick Start</h3>
               <div className="space-y-3">
                 <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-7 h-7 rounded-lg bg-brand-500/15 border border-brand-500/20 flex items-center justify-center text-xs font-mono text-brand-400">1</div>
+                  <div className="shrink-0 w-7 h-7 rounded-lg bg-accent/[0.12] border border-accent/25 flex items-center justify-center text-xs font-mono text-accent">1</div>
                   <div>
-                    <p className="text-sm text-white font-medium">Get your API key</p>
-                    <p className="text-xs text-ink-400 mt-0.5">Sign up and generate a key from the dashboard.</p>
+                    <p className="text-sm text-content font-medium">Get your API key</p>
+                    <p className="text-xs text-content-subtle mt-0.5">Sign up and generate a key from the dashboard.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-7 h-7 rounded-lg bg-brand-500/15 border border-brand-500/20 flex items-center justify-center text-xs font-mono text-brand-400">2</div>
+                  <div className="shrink-0 w-7 h-7 rounded-lg bg-accent/[0.12] border border-accent/25 flex items-center justify-center text-xs font-mono text-accent">2</div>
                   <div>
-                    <p className="text-sm text-white font-medium">Install the SDK</p>
-                    <p className="text-xs text-ink-400 mt-0.5"><code className="text-brand-300">npm install @memora/ai</code></p>
+                    <p className="text-sm text-content font-medium">Install the SDK</p>
+                    <p className="text-xs text-content-subtle mt-0.5"><code className="text-accent">npm install @memora/ai</code></p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-7 h-7 rounded-lg bg-brand-500/15 border border-brand-500/20 flex items-center justify-center text-xs font-mono text-brand-400">3</div>
+                  <div className="shrink-0 w-7 h-7 rounded-lg bg-accent/[0.12] border border-accent/25 flex items-center justify-center text-xs font-mono text-accent">3</div>
                   <div>
-                    <p className="text-sm text-white font-medium">Start remembering</p>
-                    <p className="text-xs text-ink-400 mt-0.5">Call <code className="text-brand-300">memora.remember()</code> and <code className="text-brand-300">memora.recall()</code>.</p>
+                    <p className="text-sm text-content font-medium">Start remembering</p>
+                    <p className="text-xs text-content-subtle mt-0.5">Call <code className="text-accent">memora.remember()</code> and <code className="text-accent">memora.recall()</code>.</p>
                   </div>
                 </div>
               </div>

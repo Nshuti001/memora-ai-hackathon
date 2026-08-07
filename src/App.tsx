@@ -18,7 +18,7 @@ function App() {
   const isAuthPage = route === 'login' || route === 'signup';
 
   return (
-    <div className="min-h-screen bg-ink-950 text-ink-100 overflow-x-hidden">
+    <div className="min-h-screen bg-surface text-content overflow-x-hidden">
       {!isAuthPage && <Navbar />}
       <main>
         {route === 'home' && <HomePage />}

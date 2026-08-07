@@ -25,13 +25,13 @@ export default function FeaturesPage() {
     <div className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="max-w-3xl mx-auto text-center mb-16">
-          <span className="text-sm font-semibold text-brand-400 tracking-wide uppercase">Features</span>
-          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-white">
+          <span className="text-sm font-semibold text-accent tracking-wide uppercase">Features</span>
+          <h1 className="mt-3 font-display text-4xl sm:text-6xl font-bold tracking-tight text-content">
             The complete memory
             <br />
             <span className="text-gradient-brand">infrastructure layer</span>
           </h1>
-          <p className="mt-6 text-lg text-ink-300 max-w-2xl mx-auto">
+          <p className="mt-6 text-lg text-content-muted max-w-2xl mx-auto">
             Ten capabilities that turn any AI agent into one that remembers,
             reasons, and improves over time. Powered by CockroachDB and AWS.
           </p>
@@ -39,12 +39,12 @@ export default function FeaturesPage() {
 
         <div ref={gridReveal.ref} className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 ${gridReveal.revealed ? 'revealed' : ''} reveal`}>
           {features.map((f, i) => (
-            <div key={i} className="group relative glass rounded-2xl p-6 hover:bg-white/[0.05] transition-all duration-300 hover:-translate-y-1">
-              <div className={`w-12 h-12 rounded-xl ${f.color === 'brand' ? 'bg-brand-500/10 border-brand-500/20' : 'bg-emerald-500/10 border-emerald-500/20'} border flex items-center justify-center mb-5 group-hover:scale-110 transition-transform`}>
-                <f.icon className={`w-6 h-6 ${f.color === 'brand' ? 'text-brand-400' : 'text-emerald-400'}`} strokeWidth={1.75} />
+            <div key={i} className="group relative glass rounded-2xl p-6 hover:bg-line/[0.05] transition-all duration-300 hover:-translate-y-1">
+              <div className={`w-12 h-12 rounded-xl ${f.color === 'brand' ? 'bg-accent/[0.10] border-accent/25' : 'bg-positive/10 border-positive/25'} border flex items-center justify-center mb-5 group-hover:scale-110 transition-transform`}>
+                <f.icon className={`w-6 h-6 ${f.color === 'brand' ? 'text-accent' : 'text-positive'}`} strokeWidth={1.75} />
               </div>
-              <h3 className="font-display text-lg font-semibold text-white mb-2">{f.title}</h3>
-              <p className="text-sm text-ink-300 leading-relaxed">{f.desc}</p>
+              <h3 className="font-display text-lg font-semibold text-content mb-2">{f.title}</h3>
+              <p className="text-sm text-content-muted leading-relaxed">{f.desc}</p>
             </div>
           ))}
         </div>

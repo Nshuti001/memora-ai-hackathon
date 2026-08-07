@@ -2,46 +2,205 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theming.
+ *
+ * Every colour the UI uses comes from a token defined once per theme, rather than from a hardcoded
+ * shade. That is what keeps light mode consistent: a component asks for "surface" or "muted text"
+ * and gets the right value in both themes, so there is no way for one panel to be themed and the
+ * next to be left dark.
+ *
+ * Values are space-separated RGB channels so Tailwind can apply alpha: rgb(var(--x) / 0.5).
+ */
 @layer base {
+  :root {
+    /* Light theme (default). */
+    --surface: 246 248 251;        /* page background            */
+    --surface-raised: 255 255 255; /* cards, panels              */
+    --surface-sunken: 237 241 247; /* inputs, wells              */
+    --surface-glass: 255 255 255;  /* translucent panel base     */
+    --surface-glass-alpha: 0.72;
+
+    --line: 15 22 38;              /* hairline borders           */
+    --line-alpha: 0.10;
+    --line-strong-alpha: 0.16;
+
+    --content: 11 18 32;           /* primary text               */
+    --content-muted: 71 86 111;    /* secondary text             */
+    --content-subtle: 90 103 125;  /* tertiary text, placeholders */
+
+    /* brand-400 (#22d3ee) fails contrast on white, so interactive text and icons use a darker
+       step. These are picked to clear 4.5:1 even when sitting on their own tinted chip
+       (bg-accent/[0.12] and friends), which costs about a point of contrast on its own. The
+       bright cyan is kept only for large fills where contrast is not a legibility requirement. */
+    --accent: 12 104 130;          /* text, icons, links — between brand-700 and brand-800 */
+    --accent-bright: 6 182 212;    /* brand-500 — fills, gradients   */
+    --accent-contrast: 255 255 255;/* text on an accent fill         */
+    --accent-soft-alpha: 0.10;     /* accent tint backgrounds        */
+
+    /* Display headings only, where WCAG asks 3:1 rather than 4.5:1. Reusing the text accents here
+       gave a dark-teal-to-forest-green wash that read as muddy; these stay vivid and still clear
+       the large-text bar on white. Never use them for body copy. */
+    --display-from: 8 145 178;     /* cyan-600    */
+    --display-to: 5 150 105;       /* emerald-600 */
+
+    --positive: 4 108 78;          /* between emerald-700 and -800 */
+    --warning: 180 83 9;           /* amber-700   */
+    --danger: 190 35 35;
+
+    --grid-line: 15 22 38;
+    --grid-alpha: 0.045;
+    --glow-alpha: 0.10;
+
+    /* Data-visualisation palette. Categorical, so it can't collapse into the accent
+       tokens — but it still has to be legible on the surface it's drawn on, and the
+       400-weights that read well on ink wash out on white. */
+    --viz-cyan: 8 145 178;         /* cyan-600   */
+    --viz-emerald: 5 150 105;      /* emerald-600 */
+    --viz-violet: 124 58 237;      /* violet-600 */
+    --viz-red: 220 38 38;          /* red-600    */
+    --viz-amber: 217 119 6;        /* amber-600  */
+
+    color-scheme: light;
+  }
+
+  .dark {
+    --surface: 7 11 22;            /* ink-950 */
+    --surface-raised: 255 255 255; /* used at low alpha over the dark page */
+    --surface-sunken: 15 22 38;    /* ink-900 */
+    --surface-glass: 255 255 255;
+    --surface-glass-alpha: 0.03;
+
+    --line: 255 255 255;
+    --line-alpha: 0.08;
+    --line-strong-alpha: 0.12;
+
+    --content: 233 238 245;        /* ink-100 */
+    --content-muted: 168 182 205;  /* ink-300 */
+    --content-subtle: 134 149 178; /* a step up from ink-400, which lands under 4.5:1 on glass */
+
+    --accent: 34 211 238;          /* brand-400 — bright cyan reads well on dark */
+    --accent-bright: 34 211 238;
+    --accent-contrast: 7 11 22;
+    --accent-soft-alpha: 0.15;
+
+    --display-from: 34 211 238;
+    --display-to: 52 211 153;
+
+    --positive: 52 211 153;        /* emerald-400 */
+    --warning: 251 191 36;         /* amber-400   */
+    --danger: 248 113 113;
+
+    --grid-line: 255 255 255;
+    --grid-alpha: 0.04;
+    --glow-alpha: 0.20;
+
+    --viz-cyan: 34 211 238;        /* cyan-400    */
+    --viz-emerald: 52 211 153;     /* emerald-400 */
+    --viz-violet: 167 139 250;     /* violet-400  */
+    --viz-red: 248 113 113;        /* red-400     */
+    --viz-amber: 251 191 36;       /* amber-400   */
+
+    color-scheme: dark;
+  }
+
   html {
     scroll-behavior: smooth;
   }
-  body {
-    @apply bg-ink-950 text-ink-100 font-sans antialiased;
+
+  /* Respect users who ask the OS to reduce motion: the reveal-on-scroll and float animations are
+     decorative, and for some people they cause actual nausea. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
+
+  body {
+    @apply bg-surface text-content font-sans antialiased;
+    /* Theme flips are instant on the token values; a short fade stops it feeling like a page reload. */
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
   ::selection {
-    @apply bg-brand-400/30 text-white;
+    background-color: rgb(var(--accent-bright) / 0.3);
+    color: rgb(var(--content));
+  }
+
+  /* Visible keyboard focus everywhere. The default ring is invisible against the dark theme. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 0.35rem;
   }
 }
 
 @layer utilities {
   .text-gradient {
-    @apply bg-gradient-to-r from-white via-brand-200 to-brand-400 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-content via-accent to-accent-bright bg-clip-text text-transparent;
   }
   .text-gradient-brand {
-    @apply bg-gradient-to-r from-brand-300 to-emerald-400 bg-clip-text text-transparent;
+    background-image: linear-gradient(to right, rgb(var(--display-from)), rgb(var(--display-to)));
+    @apply bg-clip-text text-transparent;
   }
+
+  /*
+   * Frosted panel. In dark mode this is a white film over a dark page; in light mode it is an
+   * opaque white card with a soft border. Same class name, so components do not branch on theme.
+   */
   .glass {
-    @apply bg-white/[0.03] backdrop-blur-xl border border-white/[0.08];
+    background-color: rgb(var(--surface-glass) / var(--surface-glass-alpha));
+    border: 1px solid rgb(var(--line) / var(--line-alpha));
+    @apply backdrop-blur-xl;
   }
   .glass-strong {
-    @apply bg-white/[0.05] backdrop-blur-2xl border border-white/[0.1];
+    background-color: rgb(var(--surface-glass) / calc(var(--surface-glass-alpha) + 0.03));
+    border: 1px solid rgb(var(--line) / var(--line-strong-alpha));
+    @apply backdrop-blur-2xl;
   }
+  /* Light mode gets a real shadow; dark mode relies on the border, where a shadow reads as mud. */
+  :root:not(.dark) .glass,
+  :root:not(.dark) .glass-strong {
+    box-shadow: 0 1px 2px rgb(15 22 38 / 0.04), 0 8px 24px -12px rgb(15 22 38 / 0.10);
+  }
+
   .grid-bg {
     background-image:
-      linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
+      linear-gradient(to right, rgb(var(--grid-line) / var(--grid-alpha)) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--grid-line) / var(--grid-alpha)) 1px, transparent 1px);
     background-size: 56px 56px;
   }
+
+  /* Decorative background blooms. Far weaker in light mode, where a strong blur reads as a smudge. */
+  .glow-orb {
+    background-color: rgb(var(--accent-bright) / var(--glow-alpha));
+  }
+  .glow-orb-positive {
+    background-color: rgb(var(--positive) / calc(var(--glow-alpha) * 0.6));
+  }
+
   .radial-fade {
     -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 40%, transparent 100%);
     mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 40%, transparent 100%);
   }
+
   .animate-delay-100 { animation-delay: 0.1s; }
   .animate-delay-200 { animation-delay: 0.2s; }
   .animate-delay-300 { animation-delay: 0.3s; }
   .animate-delay-400 { animation-delay: 0.4s; }
   .animate-delay-500 { animation-delay: 0.5s; }
+
+  /* Touch targets. Anything interactive should clear ~44px on a phone. */
+  .tap-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
 }
 
 ::-webkit-scrollbar {
@@ -49,14 +208,14 @@
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #070b16;
+  background: rgb(var(--surface));
 }
 ::-webkit-scrollbar-thumb {
-  background: #2c3852;
+  background: rgb(var(--line) / 0.25);
   border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3e4d6e;
+  background: rgb(var(--line) / 0.4);
 }
 
 .reveal {

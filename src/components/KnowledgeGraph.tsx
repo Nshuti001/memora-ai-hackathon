@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { GraphEdge, GraphNode } from '../lib/api';
+import { VIZ, viz } from '../lib/viz';
 
 interface Props {
   nodes: GraphNode[];
@@ -18,15 +19,15 @@ const WIDTH = 400;
 const HEIGHT = 400;
 
 const KIND_COLOR: Record<string, string> = {
-  episodic: '#22d3ee',
-  semantic: '#34d399',
-  procedural: '#a78bfa',
+  episodic: VIZ.cyan,
+  semantic: VIZ.emerald,
+  procedural: VIZ.violet,
 };
 
 const RELATION_STYLE: Record<string, { stroke: string; dash?: string; width: number }> = {
-  supersedes: { stroke: '#f87171', width: 1.8 },
-  derived_from: { stroke: '#34d399', width: 1.6 },
-  similar_to: { stroke: '#22d3ee', dash: '3 4', width: 1 },
+  supersedes: { stroke: VIZ.red, width: 1.8 },
+  derived_from: { stroke: VIZ.emerald, width: 1.6 },
+  similar_to: { stroke: VIZ.cyan, dash: '3 4', width: 1 },
 };
 
 /**
@@ -138,7 +139,7 @@ export default function KnowledgeGraph({ nodes, edges, className = '', onSelect 
 
   if (nodes.length === 0) {
     return (
-      <div className={`flex items-center justify-center text-sm text-ink-500 ${className}`}>
+      <div className={`flex items-center justify-center text-sm text-content-subtle ${className}`}>
         No memories to graph yet.
       </div>
     );
@@ -151,7 +152,7 @@ export default function KnowledgeGraph({ nodes, edges, className = '', onSelect 
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full h-full">
         <defs>
           <marker id="kgArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#f87171" opacity="0.7" />
+            <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: viz(VIZ.red) }} opacity="0.7" />
           </marker>
         </defs>
 
@@ -170,7 +171,7 @@ export default function KnowledgeGraph({ nodes, edges, className = '', onSelect 
               y1={source.y}
               x2={target.x}
               y2={target.y}
-              stroke={style.stroke}
+              style={{ stroke: viz(style.stroke) }}
               strokeWidth={active ? style.width + 0.8 : style.width}
               strokeDasharray={style.dash}
               strokeOpacity={hovered && !active ? 0.12 : 0.5}
@@ -180,7 +181,7 @@ export default function KnowledgeGraph({ nodes, edges, className = '', onSelect 
         })}
 
         {placed.map(({ node, x, y }) => {
-          const color = KIND_COLOR[node.kind] ?? '#22d3ee';
+          const color = KIND_COLOR[node.kind] ?? VIZ.cyan;
           const historical = node.status !== 'live';
           const radius = 7 + Number(node.importance) * 7;
           const dimmed = hovered !== null && hovered !== node.id;
@@ -194,19 +195,19 @@ export default function KnowledgeGraph({ nodes, edges, className = '', onSelect 
               style={{ cursor: onSelect ? 'pointer' : 'default' }}
               opacity={dimmed ? 0.35 : 1}
             >
-              <circle cx={x} cy={y} r={radius + 6} fill={color} opacity={historical ? 0.04 : 0.1} />
+              <circle cx={x} cy={y} r={radius + 6} style={{ fill: viz(color) }} opacity={historical ? 0.04 : 0.1} />
               <circle
                 cx={x}
                 cy={y}
                 r={radius}
-                fill="#0a1020"
-                stroke={color}
+                className="fill-surface"
+                style={{ stroke: viz(color) }}
                 strokeWidth={historical ? 1 : 2}
                 strokeDasharray={historical ? '2 2' : undefined}
                 strokeOpacity={historical ? 0.55 : 1}
               />
               {node.shared && (
-                <circle cx={x + radius - 1} cy={y - radius + 1} r="2.5" fill="#fbbf24" />
+                <circle cx={x + radius - 1} cy={y - radius + 1} r="2.5" style={{ fill: viz(VIZ.amber) }} />
               )}
             </g>
           );
@@ -218,15 +219,15 @@ export default function KnowledgeGraph({ nodes, edges, className = '', onSelect 
           <div className="flex items-center gap-2 mb-1">
             <span
               className="inline-block w-2 h-2 rounded-full"
-              style={{ backgroundColor: KIND_COLOR[hoveredNode.kind] ?? '#22d3ee' }}
+              style={{ backgroundColor: viz(KIND_COLOR[hoveredNode.kind] ?? VIZ.cyan) }}
             />
-            <span className="text-[10px] font-mono text-ink-400">{hoveredNode.kind}</span>
+            <span className="text-[10px] font-mono text-content-subtle">{hoveredNode.kind}</span>
             {hoveredNode.status !== 'live' && (
-              <span className="text-[10px] font-mono text-amber-300">{hoveredNode.status}</span>
+              <span className="text-[10px] font-mono text-warning">{hoveredNode.status}</span>
             )}
-            {hoveredNode.shared && <span className="text-[10px] font-mono text-amber-300">shared</span>}
+            {hoveredNode.shared && <span className="text-[10px] font-mono text-warning">shared</span>}
           </div>
-          <p className="text-xs text-white leading-snug line-clamp-3">{hoveredNode.content}</p>
+          <p className="text-xs text-content leading-snug line-clamp-3">{hoveredNode.content}</p>
         </div>
       )}
     </div>
@@ -236,21 +237,21 @@ export default function KnowledgeGraph({ nodes, edges, className = '', onSelect 
 /** Legend, exported so the dashboard can place it outside the SVG's aspect box. */
 export function GraphLegend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-400">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-content-subtle">
       {Object.entries(KIND_COLOR).map(([kind, color]) => (
         <span key={kind} className="inline-flex items-center gap-1">
-          <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+          <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: viz(color) }} />
           {kind}
         </span>
       ))}
       <span className="inline-flex items-center gap-1">
-        <span className="inline-block w-3 h-px bg-red-400" /> supersedes
+        <span className="inline-block w-3 h-px" style={{ backgroundColor: viz(VIZ.red) }} /> supersedes
       </span>
       <span className="inline-flex items-center gap-1">
-        <span className="inline-block w-3 h-px bg-emerald-400" /> derived from
+        <span className="inline-block w-3 h-px bg-positive" /> derived from
       </span>
       <span className="inline-flex items-center gap-1">
-        <span className="inline-block w-3 border-t border-dashed border-cyan-400" /> similar
+        <span className="inline-block w-3 border-t border-dashed" style={{ borderColor: viz(VIZ.cyan) }} /> similar
       </span>
     </div>
   );
