@@ -4,7 +4,7 @@ import { navigateTo } from '../router';
 import { useReveal } from '../hooks/useReveal';
 
 const trustStats = [
-  { icon: Database, value: '1024-d', label: 'Titan V2 embeddings' },
+  { icon: Database, value: '1024-d', label: 'Bedrock embeddings' },
   { icon: Zap, value: 'ANN', label: 'Distributed vector index' },
   { icon: Clock, value: 'Serializable', label: 'Transactional writes' },
   { icon: Globe, value: 'AWS', label: 'Lambda + Bedrock' },

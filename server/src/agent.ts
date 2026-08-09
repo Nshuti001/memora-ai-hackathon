@@ -2,6 +2,7 @@ import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import { config } from './config.js';
 import { query } from './db.js';
 import {
+  NEAR_DUPLICATE_DISTANCE,
   recall,
   recallLexical,
   remember,
@@ -11,6 +12,13 @@ import {
 } from './memory.js';
 import { recallAsOf } from './time-travel.js';
 import { record } from './observability.js';
+import {
+  correctionStrength,
+  inferImportance,
+  inferKind,
+  looksLikeGreeting,
+  looksLikeQuestion,
+} from './heuristics.js';
 
 // Classic Bedrock Runtime client.
 //
@@ -25,14 +33,19 @@ function client(): AnthropicBedrock {
     const accessKey = config.awsAccessKeyId;
     const secretKey = config.awsSecretAccessKey;
 
+    // One retry, not the SDK default. A throttled response here means an exhausted quota, and
+    // retrying that with exponential backoff turned a failed turn into a ~134s wait before the
+    // memory-only fallback even started.
+    const shared = { awsRegion: config.awsRegion, maxRetries: 1 };
+
     if (accessKey && secretKey) {
       bedrock = new AnthropicBedrock({
-        awsRegion: config.awsRegion,
+        ...shared,
         awsAccessKey: accessKey,
         awsSecretKey: secretKey,
       });
     } else if (config.onLambda) {
-      bedrock = new AnthropicBedrock({ awsRegion: config.awsRegion });
+      bedrock = new AnthropicBedrock(shared);
     } else {
       throw new Error(
         'No AWS credentials. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in server/.env — see SETUP.md step 2.',
@@ -41,6 +54,16 @@ function client(): AnthropicBedrock {
   }
   return bedrock;
 }
+
+/**
+ * How close an incoming correction must be to an existing memory before it supersedes it.
+ *
+ * Calibrated per embedding provider in config.ts. Anything nearer than NEAR_DUPLICATE_DISTANCE is a
+ * restatement and is merged by remember() instead, so the supersession band is the gap between the
+ * two. A weak marker ("now", "moved to") is held to the tighter `cluster` line, because on its own
+ * it is as likely to be adding a fact as retracting one.
+ */
+const SUPERSEDE_DISTANCE = config.thresholds.supersede;
 
 const SYSTEM_PROMPT = `You are Memora, a research assistant with persistent memory that survives across
 sessions. Your memory lives in a CockroachDB cluster and is the reason you are useful: without it you are
@@ -210,25 +233,52 @@ function bedrockUnavailableReason(err: unknown): string | null {
 }
 
 /**
+ * Circuit breaker around Bedrock.
+ *
+ * When the quota is exhausted every turn fails the same way, and paying the full request timeout
+ * to rediscover that on each message makes the product feel broken rather than degraded. Once a
+ * turn has established Bedrock is unavailable, later turns skip it and answer from memory
+ * immediately, until the cooldown expires and one turn pays to re-check.
+ *
+ * The state is per process, so a fresh Lambda execution environment always probes once. That is
+ * the behaviour we want: it costs one slow turn to notice the quota came back.
+ */
+const BEDROCK_RECHECK_MS = 60_000;
+let bedrockDownUntil = 0;
+let bedrockDownReason = '';
+
+function bedrockKnownDown(): string | null {
+  return Date.now() < bedrockDownUntil ? bedrockDownReason : null;
+}
+
+function markBedrockDown(reason: string): void {
+  bedrockDownUntil = Date.now() + BEDROCK_RECHECK_MS;
+  bedrockDownReason = reason;
+}
+
+function markBedrockUp(): void {
+  bedrockDownUntil = 0;
+  bedrockDownReason = '';
+}
+
+/**
  * A turn that exercises the memory layer without Claude.
  *
- * This exists so the product degrades into something honest rather than an error page: recall and
- * storage are the parts being judged, and they do not need an LLM. It performs no reasoning and says
- * so — the reply is a plain report of what the memory layer did, never an imitation of an answer.
+ * This exists so the product degrades into something honest rather than an error page: recall,
+ * classification, deduplication and supersession are the parts being judged, and none of them need
+ * an LLM. It performs no reasoning and says so — the reply reports what the memory layer did, and
+ * never imitates an answer the model would have given.
+ *
+ * The classification and correction decisions come from `heuristics.ts` rather than from Claude.
+ * That matters: storing everything as `semantic` and never superseding would keep the demo alive
+ * while quietly removing memory types and supersession, which are the two behaviours that make
+ * this a memory rather than a log — and supersession is what gives time travel anything to show.
  */
 async function memoryOnlyTurn(
   opts: { tenantId: string; agentId: string; sessionId?: string | null; message: string },
   collected: Collected,
 ): Promise<string> {
   const message = opts.message.trim();
-  const looksLikeQuestion =
-    message.endsWith('?') ||
-    /^(what|when|where|who|why|how|which|do|does|did|is|are|was|were|can|could|should|would|tell me|remind me)\b/i.test(
-      message,
-    );
-  const isGreeting =
-    /^(hi|hello|hey|yo|sup|good (morning|afternoon|evening)|howdy)\b/i.test(message) ||
-    message.split(/\s+/).length <= 2 && /^(hi|hello|hey)!?$/i.test(message);
 
   // Semantic recall needs an embedding. If that fails, fall back to a lexical SQL match so the
   // store stays readable — degraded, but never dark.
@@ -259,22 +309,23 @@ async function memoryOnlyTurn(
   const found: { content: string; kind: string; score?: number }[] =
     searchMode === 'meaning' ? hits : lexical.map((m) => ({ content: m.content, kind: m.kind }));
 
-  if (isGreeting) {
+  if (looksLikeGreeting(message)) {
     return (
-      "Hi — Claude is temporarily blocked by your AWS Bedrock daily token quota, so I'm running " +
-      'on the CockroachDB memory layer alone (still real store/recall, no model). Tell me a fact ' +
-      'about how you work (e.g. "we ship on Fridays") and I will remember it, or ask what I know.'
+      "I'm running on the CockroachDB memory layer alone right now — this deployment's Bedrock " +
+      'quota is exhausted, so there is no model reasoning behind these replies. Everything else is ' +
+      'real: tell me a fact about how you work and I will classify it, embed it and store it. Ask ' +
+      'about it later and I will recall it by meaning. Correct it and I will supersede the old one, ' +
+      'which you can then watch change in Time Travel.'
     );
   }
 
-  if (looksLikeQuestion) {
+  if (looksLikeQuestion(message)) {
     if (found.length === 0) {
       return (
         "I don't have anything in memory that matches that yet. Tell me the answer as a clear fact " +
         'and I will store it for next time.'
       );
     }
-    // Lead with the best hit as a direct answer so the UI feels agent-like even without Claude.
     const top = found[0];
     const others = found.slice(1, 4);
     const lines = [
@@ -286,7 +337,7 @@ async function memoryOnlyTurn(
     ];
     if (others.length) {
       lines.push('', 'Also related:');
-      for (const m of others) lines.push(`• ${m.content}`);
+      for (const m of others) lines.push(`\u2022 ${m.content}`);
     }
     return lines.join('\n');
   }
@@ -308,19 +359,55 @@ async function memoryOnlyTurn(
     );
   }
 
+  const kind = inferKind(message);
+  const importance = inferImportance(message, kind);
+
+  // Does this replace something already known? A strong marker ("actually", "no longer") is trusted
+  // on its own; a weak one ("now", "moved to") only counts when the nearest memory is close enough
+  // in embedding space to plausibly be the thing being corrected. Without that guard, "we now have
+  // three regions" would retract an unrelated fact instead of adding one.
+  const strength = correctionStrength(message);
+  const nearest = hits[0];
+  const ceiling = strength === 'strong' ? SUPERSEDE_DISTANCE : config.thresholds.cluster;
+  const nearEnough =
+    nearest != null &&
+    nearest.distance != null &&
+    nearest.distance <= ceiling &&
+    nearest.distance > NEAR_DUPLICATE_DISTANCE;
+
+  if (nearest && nearEnough && strength !== 'none') {
+    const replacement = await supersede({
+      tenantId: opts.tenantId,
+      agentId: opts.agentId,
+      oldId: nearest.id,
+      content: message,
+      kind,
+      importance: Math.max(importance, 0.7),
+    });
+    collected.saved.push({ id: replacement.id, content: replacement.content, deduplicated: false });
+
+    return (
+      `Updated. I was holding "${nearest.content}" \u2014 that is now marked superseded rather than ` +
+      `deleted, with a supersedes edge to the new ${kind} memory ` +
+      `(${replacement.id.slice(0, 8)}).\n\nAsk Time Travel what I believed before this and the old ` +
+      'answer is still there.'
+    );
+  }
+
   const { memory, deduplicated } = await remember({
     tenantId: opts.tenantId,
     agentId: opts.agentId,
     sessionId: opts.sessionId,
     content: message,
-    kind: 'semantic',
-    importance: 0.5,
+    kind,
+    importance,
   });
   collected.saved.push({ id: memory.id, content: memory.content, deduplicated });
 
   return deduplicated
-    ? `Already knew that — reinforced the existing memory instead of duplicating it.`
-    : `Got it — stored in CockroachDB (${memory.id.slice(0, 8)}). Ask me about it later and I will recall it by meaning.`;
+    ? 'Already knew that \u2014 reinforced the existing memory instead of duplicating it.'
+    : `Got it \u2014 stored in CockroachDB as a ${kind} memory (${memory.id.slice(0, 8)}), ` +
+      `importance ${importance}. Ask me about it later and I will recall it by meaning.`;
 }
 
 type Content = { type: string; [key: string]: unknown };
@@ -393,6 +480,29 @@ export async function* streamTurn(opts: {
   let finalText = '';
   let stopReason: string | null = null;
   let degraded: AgentTurn['degraded'];
+
+  // Skip Bedrock entirely while the breaker is open — a recent turn already established it is
+  // unavailable, and re-establishing that costs the whole request timeout on every message.
+  const knownDown = bedrockKnownDown();
+  if (knownDown) {
+    degraded = { reason: 'bedrock_unavailable', detail: knownDown };
+    const reply = await memoryOnlyTurn(opts, collected);
+    record('agent.turn.degraded', Date.now() - started, false);
+    yield { type: 'text', text: reply };
+    yield {
+      type: 'done',
+      turn: {
+        reply,
+        recalled: collected.recalled,
+        saved: collected.saved,
+        toolCalls,
+        latencyMs: Date.now() - started,
+        stopReason: 'memory_only',
+        degraded,
+      },
+    };
+    return;
+  }
 
   try {
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -484,6 +594,7 @@ export async function* streamTurn(opts: {
       degraded,
     };
 
+    markBedrockUp();
     record('agent.turn', turn.latencyMs, false);
     yield { type: 'done', turn };
   } catch (err) {
@@ -499,6 +610,7 @@ export async function* streamTurn(opts: {
 
     record('agent.turn.degraded', Date.now() - started, false);
     degraded = { reason: 'bedrock_unavailable', detail: reason };
+    markBedrockDown(reason);
     console.warn(`[agent] Bedrock unavailable, serving memory-only turn — ${reason}`);
 
     try {

@@ -31,25 +31,48 @@ Browser at 1440×900. Close other tabs. Have the SQL terminal ready on a second 
 > "Every AI agent forgets everything the moment the session ends. Memora fixes that: it's a memory
 > layer where CockroachDB isn't storage bolted onto an agent — it *is* the memory."
 
-On screen: the dashboard, already seeded. Let the live numbers show — 16 memories, memory composition,
+On screen: the dashboard, already seeded. Let the live numbers show — the seeded store, memory composition,
 recall latency.
+
+## Before you record: say the quota thing once, early
+
+Our Bedrock account has a **zero on-demand quota on every chat model, in every region** — a
+new-account restriction we cannot lift before the deadline. The deployed demo therefore answers from
+the memory layer alone, and labels every such reply "memory layer only — not model output".
+
+Do not hide this and do not apologise for it for thirty seconds. Say it once, in one sentence, and
+make it a point in your favour:
+
+> "Claude is quota-blocked on this account, so what you're about to see runs with no model at all.
+> That's the honest version — and it's the interesting one, because none of what makes this a
+> *memory* needs an LLM."
+
+Everything below still works: classification into three memory types, semantic recall, supersession,
+time travel, the graph. Only the conversational phrasing is missing.
 
 ## 0:20–0:55 — It actually remembers
 
 Type into the chat:
 
-> `I always deploy on Fridays and I need zero-downtime migrations.`
+> `always run the database migrations before deploying to production`
 
-Show the tool chips appearing (`save_memory`) and the reply streaming in.
+The reply names what it did: stored as a **procedural** memory, with an importance and an id. That
+classification came from language rules, not from Claude — worth saying out loud, because it is why
+the demo still has three memory types with the model switched off.
 
-Then, **in the same breath**, ask something worded completely differently:
+Then ask something worded completely differently:
 
-> `When is it safe for me to ship code?`
+> `how should I deploy?`
 
-Point at the `recalled` chips under the answer.
+Point at the recalled memory and its score.
 
-> "It didn't keyword-match 'ship' to 'deploy'. That's an approximate-nearest-neighbour search over a
-> CockroachDB vector index — and those little chips are the actual memory rows it consulted."
+> "It didn't keyword-match 'deploy' to 'migrations'. That's an approximate-nearest-neighbour search
+> over a CockroachDB vector index, and the score is the real distance."
+
+Add one more of each kind so the composition panel fills in:
+
+> `our data retention policy is sixty days for customer records`  (semantic)
+> `we shipped the distributed vector index yesterday afternoon`  (episodic)
 
 ## 0:55–1:25 — The CockroachDB memory layer, on screen
 
@@ -74,9 +97,29 @@ Point at the plan:
 > "`vector search`, on `memories@memories_embedding_idx`, with prefix spans scoping it to this tenant
 > and agent. One agent's recall physically cannot scan another tenant's vectors."
 
+## 1:10–1:25 — Correct it, and watch supersession happen
+
+> `actually the retention policy is now ninety days after the compliance audit`
+
+The reply says exactly what the memory layer did: the old memory is **superseded, not deleted**, and
+a `supersedes` edge now joins the two. Ask the question again and the new answer comes back.
+
+> "Nothing was overwritten. The old belief is still on disk, which is the whole reason the next part
+> is possible."
+
 ## 1:25–1:55 — Time travel (the differentiator)
 
-Back in the dashboard, Time Travel tab. Query `retention policy`, compare against 1 hour ago.
+**Timing matters here, and it is the one thing that will silently ruin a take.** A belief *change*
+only appears if the original memory was written *before* the window you diff against and the
+correction *inside* it. If you state the fact and correct it thirty seconds apart, then diff at
+`-5m`, both land inside the window and it reports two things learned and nothing changed — which
+looks like the feature is broken when it is working exactly as specified.
+
+So: state the fact early in the recording (the 0:20 beat), do the correction at the 1:10 beat, and
+diff at `-1m`. Verified against the live deployment — with about 75 seconds between the two writes,
+a `-1m` diff returns `learned 1, changed 1`, with the old sixty-day memory listed under changed.
+
+Back in the dashboard, Time Travel tab. Query `retention policy`, compare against 1 minute ago.
 
 > "CockroachDB is MVCC, so superseded row versions are already on disk. This is `AS OF SYSTEM TIME` —
 > the agent's actual former belief state, not a reconstruction. No history table. No snapshots. No
