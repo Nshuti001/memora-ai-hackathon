@@ -175,7 +175,7 @@ Two Agent Skills encode the CockroachDB expertise this project accumulated, in t
 - **Graceful degradation.** The dashboard shows "API unreachable" with the exact fix rather than fake
   numbers; consolidation falls back to a representative memory if Bedrock is unavailable; the health
   check runs a real query so it fails when the database is unreachable, not just when the process is.
-- **66 tests**, runnable with no AWS account.
+- **100 tests**, runnable with no AWS account.
 
 ---
 
@@ -228,7 +228,7 @@ misconfigured".
 cd server && npm test
 ```
 
-66 tests against a real CockroachDB (an in-memory fake would exercise none of the vector index, MVCC,
+100 tests against a real CockroachDB (an in-memory fake would exercise none of the vector index, MVCC,
 or serializable behaviour that matters here). They skip cleanly with a message if no cluster is
 reachable.
 
@@ -280,7 +280,7 @@ tenant for local development.
 | [server/src/embeddings.ts](server/src/embeddings.ts) | Titan embeddings, the local provider, unit-vector normalization |
 | [server/src/observability.ts](server/src/observability.ts) | Latency metrics and the distributed rate limiter |
 | [server/src/db.ts](server/src/db.ts) | Pool and serializable-retry transaction wrapper |
-| [server/test/](server/test/) | 66 tests |
+| [server/test/](server/test/) | 100 tests |
 | [src/pages/DashboardPage.tsx](src/pages/DashboardPage.tsx) | Chat, memory browser, knowledge graph, time travel |
 | [src/components/KnowledgeGraph.tsx](src/components/KnowledgeGraph.tsx) | Force-directed graph over real memory links |
 | [.claude/skills/](.claude/skills/) | CockroachDB Agent Skills |
