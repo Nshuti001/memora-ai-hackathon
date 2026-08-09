@@ -3,11 +3,19 @@
 # Publishes the dashboard to S3 + CloudFront and puts the memory API behind the same distribution
 # at /api/*, so the browser talks to one origin and CORS never enters the picture.
 #
-# Why CloudFront rather than hitting the Lambda Function URL directly: a public Function URL
-# (auth-type NONE) is blocked at the account level on new AWS accounts and answers 403 no matter
-# what the resource policy says. Fronting it with an Origin Access Control lets CloudFront sign
-# each request with SigV4, so the Function URL can stay on AWS_IAM auth and CloudFront becomes its
-# only permitted caller. That is stricter than a public URL, not looser.
+# The API reaches Lambda through an API Gateway HTTP API rather than the function's own URL. Two
+# earlier routes were tried and abandoned, and the reasons are worth recording:
+#
+#   * A public Function URL (auth-type NONE) returns 403 regardless of the resource policy. New AWS
+#     accounts block unauthenticated function URLs; a SigV4-signed request to the same URL succeeds,
+#     which is how we know the function itself was fine.
+#   * Fronting that URL with a CloudFront Origin Access Control also fails. CloudFront signs the
+#     origin request, but the signature is rejected — GETs come back as a bare authorization error
+#     and POSTs as "signature does not match". Disabling compression and excluding the Authorization
+#     header from the origin request policy made no difference.
+#
+# API Gateway is public by design, so nothing has to be signed. Payload format 2.0 is byte-identical
+# to the Function URL event, so lambda.ts is unchanged.
 #
 # Run from the server/ directory, after deploy.sh:  ./deploy-web.sh
 set -euo pipefail
@@ -18,10 +26,23 @@ cd "$(dirname "$0")"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET="${BUCKET:-memora-ai-web-${ACCOUNT_ID}}"
+FN_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${FUNCTION_NAME}"
 
-FN_URL="$(aws lambda get-function-url-config --function-name "$FUNCTION_NAME" \
-           --region "$REGION" --query FunctionUrl --output text)"
-FN_HOST="${FN_URL#https://}"; FN_HOST="${FN_HOST%/}"
+echo "==> Ensuring the HTTP API"
+API_ID="$(aws apigatewayv2 get-apis --query "Items[?Name=='memora-http-api'].ApiId | [0]" \
+           --output text 2>/dev/null || echo None)"
+if [[ "$API_ID" == "None" || -z "$API_ID" ]]; then
+  # --target builds the proxy integration, the $default route and an auto-deploying $default stage
+  # in one call, so request paths reach the handler unprefixed.
+  API_ID="$(aws apigatewayv2 create-api --name memora-http-api --protocol-type HTTP \
+             --target "$FN_ARN" --query ApiId --output text)"
+fi
+aws lambda add-permission --function-name "$FUNCTION_NAME" --statement-id apigw-invoke \
+  --action lambda:InvokeFunction --principal apigateway.amazonaws.com \
+  --source-arn "arn:aws:execute-api:${REGION}:${ACCOUNT_ID}:${API_ID}/*/*" \
+  --region "$REGION" >/dev/null 2>&1 || true
+
+API_HOST="${API_ID}.execute-api.${REGION}.amazonaws.com"
 
 echo "==> Building the dashboard for same-origin API calls"
 # Empty VITE_API_URL leaves BASE_URL as '', so the client requests /api/... relative to whatever
@@ -54,12 +75,6 @@ if [[ "$S3_OAC" == "None" || -z "$S3_OAC" ]]; then
     '{"Name":"memora-s3","Description":"Memora dashboard bucket","SigningProtocol":"sigv4","SigningBehavior":"always","OriginAccessControlOriginType":"s3"}' \
     --query 'OriginAccessControl.Id' --output text)"
 fi
-LAMBDA_OAC="$(oac_id "memora-lambda")"
-if [[ "$LAMBDA_OAC" == "None" || -z "$LAMBDA_OAC" ]]; then
-  LAMBDA_OAC="$(aws cloudfront create-origin-access-control --origin-access-control-config \
-    '{"Name":"memora-lambda","Description":"Memora memory API","SigningProtocol":"sigv4","SigningBehavior":"always","OriginAccessControlOriginType":"lambda"}' \
-    --query 'OriginAccessControl.Id' --output text)"
-fi
 
 DIST_ID="$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?Comment=='memora-ai'].Id | [0]" --output text 2>/dev/null || echo None)"
@@ -82,9 +97,8 @@ if [[ "$DIST_ID" == "None" || -z "$DIST_ID" ]]; then
         "S3OriginConfig": { "OriginAccessIdentity": "" }
       },
       {
-        "Id": "lambda-api",
-        "DomainName": "${FN_HOST}",
-        "OriginAccessControlId": "${LAMBDA_OAC}",
+        "Id": "api-gateway",
+        "DomainName": "${API_HOST}",
         "CustomOriginConfig": {
           "HTTPPort": 80,
           "HTTPSPort": 443,
@@ -109,7 +123,7 @@ if [[ "$DIST_ID" == "None" || -z "$DIST_ID" ]]; then
     "Items": [
       {
         "PathPattern": "/api/*",
-        "TargetOriginId": "lambda-api",
+        "TargetOriginId": "api-gateway",
         "ViewerProtocolPolicy": "https-only",
         "Compress": true,
         "AllowedMethods": { "Quantity": 7, "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"],
@@ -117,13 +131,6 @@ if [[ "$DIST_ID" == "None" || -z "$DIST_ID" ]]; then
         "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
         "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac"
       }
-    ]
-  },
-  "CustomErrorResponses": {
-    "Quantity": 2,
-    "Items": [
-      { "ErrorCode": 403, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 10 },
-      { "ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 10 }
     ]
   }
 }
@@ -143,20 +150,6 @@ aws s3api put-bucket-policy --bucket "$BUCKET" --policy "$(cat <<JSON
   "Condition":{"StringEquals":{"AWS:SourceArn":"${DIST_ARN}"}}}]}
 JSON
 )" >/dev/null
-
-echo "==> Locking the Function URL to this distribution"
-# AWS_IAM means an unsigned public request is rejected; only CloudFront, which signs with the OAC,
-# gets through.
-aws lambda update-function-url-config --function-name "$FUNCTION_NAME" \
-  --auth-type AWS_IAM --region "$REGION" >/dev/null
-for sid in public-function-url public-url-v2; do
-  aws lambda remove-permission --function-name "$FUNCTION_NAME" --statement-id "$sid" \
-    --region "$REGION" >/dev/null 2>&1 || true
-done
-aws lambda add-permission --function-name "$FUNCTION_NAME" --statement-id cloudfront-oac \
-  --action lambda:InvokeFunctionUrl --principal cloudfront.amazonaws.com \
-  --source-arn "$DIST_ARN" --function-url-auth-type AWS_IAM \
-  --region "$REGION" >/dev/null 2>&1 || true
 
 echo "==> Invalidating cache"
 aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*' >/dev/null

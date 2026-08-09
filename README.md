@@ -29,6 +29,7 @@ flowchart TB
 
     subgraph AWS["Amazon Web Services"]
         CF[CloudFront + S3<br/>React dashboard]
+        APIGW[API Gateway HTTP API<br/>public entry point]
         LAM[AWS Lambda<br/>agent loop and memory API]
 
         subgraph BR["Amazon Bedrock"]
@@ -48,7 +49,8 @@ flowchart TB
     CCLOUD[ccloud CLI<br/>backups, network, preflight]
 
     User --> CF
-    CF -->|"HTTPS / SSE"| LAM
+    CF -->|"/api/* same-origin"| APIGW
+    APIGW -->|"proxy, payload format 2.0"| LAM
     LAM -->|"5-tool agent loop"| CLAUDE
     LAM -->|"embed"| TITAN
     LAM -->|"ANN: embedding &lt;-&gt; query"| VEC
