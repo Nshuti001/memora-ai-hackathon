@@ -12,21 +12,32 @@ import {
 import { recallAsOf } from './time-travel.js';
 import { record } from './observability.js';
 
-// Classic Bedrock Runtime client. Pass keys explicitly so a missing ambient credential chain
-// (common when the process is started outside server/) cannot silently degrade the agent.
+// Classic Bedrock Runtime client.
+//
+// Locally we pass keys explicitly, so a missing ambient credential chain (common when the process
+// is started outside server/) fails loudly instead of silently degrading the agent. On Lambda that
+// reasoning inverts: the execution role is the credential source, and Lambda reserves
+// AWS_ACCESS_KEY_ID so the environment cannot carry one. There, absent keys are correct, and the
+// SDK's default chain is what we want.
 let bedrock: AnthropicBedrock | null = null;
 function client(): AnthropicBedrock {
   if (!bedrock) {
-    if (!config.awsAccessKeyId || !config.awsSecretAccessKey) {
+    const accessKey = config.awsAccessKeyId;
+    const secretKey = config.awsSecretAccessKey;
+
+    if (accessKey && secretKey) {
+      bedrock = new AnthropicBedrock({
+        awsRegion: config.awsRegion,
+        awsAccessKey: accessKey,
+        awsSecretKey: secretKey,
+      });
+    } else if (config.onLambda) {
+      bedrock = new AnthropicBedrock({ awsRegion: config.awsRegion });
+    } else {
       throw new Error(
         'No AWS credentials. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in server/.env — see SETUP.md step 2.',
       );
     }
-    bedrock = new AnthropicBedrock({
-      awsRegion: config.awsRegion,
-      awsAccessKey: config.awsAccessKeyId,
-      awsSecretKey: config.awsSecretAccessKey,
-    });
   }
   return bedrock;
 }

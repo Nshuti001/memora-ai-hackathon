@@ -90,6 +90,11 @@ export const config = {
   awsRegion: process.env.AWS_REGION ?? 'us-east-1',
   awsAccessKeyId,
   awsSecretAccessKey,
+
+  // On Lambda, credentials arrive through the execution role rather than the environment —
+  // and must, since Lambda reserves AWS_ACCESS_KEY_ID and refuses to set it. Callers use this
+  // to decide whether absent keys are a misconfiguration or the expected arrangement.
+  onLambda: Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME),
   embeddingProvider,
   // Thresholds for the preferred embedding space. When auto falls back, recall still works —
   // near-duplicate matching is slightly looser or tighter depending on the provider.

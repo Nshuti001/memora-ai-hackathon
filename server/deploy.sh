@@ -68,8 +68,13 @@ fi
 
 # Lambda reads config from its own environment, not from a bundled .env file — a .env inside the
 # deployment package would put the database password in the artifact.
+#
+# AWS_* keys are dropped rather than forwarded. Lambda reserves AWS_REGION, AWS_ACCESS_KEY_ID and
+# AWS_SECRET_ACCESS_KEY and rejects CreateFunction outright if they appear. It supplies the region
+# itself, and credentials come from the execution role — which is the better arrangement anyway,
+# since it keeps a long-lived key pair out of the function configuration.
 ENV_JSON="$(
-  grep -v '^\s*#' .env | grep -v '^\s*$' \
+  grep -v '^\s*#' .env | grep -v '^\s*$' | grep -v '^\s*AWS_' \
     | awk -F= '{key=$1; sub(/^[^=]*=/, "", $0); printf "\"%s\":\"%s\",", key, $0}' \
     | sed 's/,$//'
 )"

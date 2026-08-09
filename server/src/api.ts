@@ -51,8 +51,19 @@ function json(status: number, body: unknown, headers?: Record<string, string>): 
   return { kind: 'json', status, body, headers };
 }
 
-/** Extracts a bearer token from the Authorization header. */
+/**
+ * Extracts the session token.
+ *
+ * `Authorization: Bearer …` is the normal transport. `x-memora-session` exists because behind
+ * CloudFront the Authorization header is not ours to use: an Origin Access Control signs each
+ * request to the Lambda Function URL with SigV4 and puts that signature in Authorization, so a
+ * viewer's Authorization header cannot be forwarded without colliding with it. Both are accepted
+ * so the same build works whether it is served through CloudFront or hit directly.
+ */
 function bearerToken(headers: ApiRequest['headers']): string | undefined {
+  const session = headers['x-memora-session'] ?? headers['X-Memora-Session'];
+  if (session?.trim()) return session.trim();
+
   const raw = headers['authorization'] ?? headers['Authorization'];
   if (!raw) return undefined;
   const match = /^Bearer\s+(.+)$/i.exec(raw);

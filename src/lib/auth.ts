@@ -94,10 +94,17 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return payload as T;
 }
 
-/** Header to attach to every authenticated API call. Empty when signed out. */
+/**
+ * Header to attach to every authenticated API call. Empty when signed out.
+ *
+ * Sent as `x-memora-session` rather than `Authorization`: in the deployed stack CloudFront reaches
+ * the API through an Origin Access Control, which signs each origin request with SigV4 and claims
+ * the Authorization header for that signature. A viewer Authorization header cannot be forwarded
+ * alongside it, so the session rides in its own header. The server accepts both.
+ */
 export function authHeader(): Record<string, string> {
   const token = getToken();
-  return token ? { authorization: `Bearer ${token}` } : {};
+  return token ? { 'x-memora-session': token } : {};
 }
 
 interface AuthResponse {

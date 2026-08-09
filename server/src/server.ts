@@ -12,7 +12,7 @@ function applyCors(res: ServerResponse, origin: string | undefined): void {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Headers', 'content-type, x-api-key, authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'content-type, x-api-key, authorization, x-memora-session');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 }
 
