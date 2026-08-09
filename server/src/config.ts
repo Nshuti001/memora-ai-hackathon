@@ -51,9 +51,17 @@ const embeddingProvider: EmbeddingProvider = (
  *
  * The local provider's band is compressed against the top of the range because it only sees lexical
  * overlap. Reusing Titan's 0.55 cluster threshold there finds no clusters at all.
+ *
+ * `supersede` is deliberately looser than `cluster`. A correction is only considered at all when the
+ * text carries an explicit marker ("actually", "no longer"), and that linguistic signal is strong
+ * evidence on its own — so the distance check only has to rule out replacing something unrelated,
+ * not prove the two are near-identical. On Cohere the correction that motivated this ("retention is
+ * sixty days" -> "actually retention is now ninety days") sits around 1.0: same topic, opposite
+ * value, and comfortably past the 0.90 cluster line. Held at 0.55 it silently stored a second,
+ * contradictory memory instead of superseding the first.
  */
 const THRESHOLDS = {
-  bedrock: { nearDuplicate: 0.35, cluster: 0.55 },
+  bedrock: { nearDuplicate: 0.35, cluster: 0.55, supersede: 0.75 },
   // Cohere v3, measured on this project's own sentences (not estimated):
   //   identical 0.000 · distinct episodes on one topic 0.595-0.632 · paraphrase 0.692
   //   same topic 1.038 · related domain 1.096 · unrelated 1.129
@@ -66,15 +74,36 @@ const THRESHOLDS = {
   //
   // The cluster threshold sits at 0.90: above the 0.632 episode spread so consolidation still groups
   // them, well below the 1.129 unrelated floor so it never pulls in an unrelated memory.
-  cohere: { nearDuplicate: 0.45, cluster: 0.90 },
-  local: { nearDuplicate: 0.35, cluster: 1.15 },
+  cohere: { nearDuplicate: 0.45, cluster: 0.90, supersede: 1.05 },
+  local: { nearDuplicate: 0.35, cluster: 1.15, supersede: 1.20 },
   // auto may serve any of the three in one process; use the loosest cluster threshold so
   // consolidation still finds groups after a fallback.
-  auto: { nearDuplicate: 0.35, cluster: 1.15 },
+  auto: { nearDuplicate: 0.35, cluster: 1.15, supersede: 1.20 },
 } as const;
 
-const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim() || undefined;
-const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim() || undefined;
+/**
+ * Bedrock credentials.
+ *
+ * Lambda reserves AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY — it refuses to let a function set
+ * them, and injects the execution role's *temporary* credentials under those names at runtime. So
+ * the deploy ships the long-term pair as BEDROCK_*, and on Lambda those must win.
+ *
+ * Preferring AWS_* there would pick up the role's temporary access key and secret while dropping
+ * AWS_SESSION_TOKEN, which temporary credentials are meaningless without. The request still gets
+ * signed, and Bedrock rejects it with `UnrecognizedClientException: The security token included in
+ * the request is invalid` — an error that reads like a bad key rather than a half-assembled one.
+ */
+const onLambdaRuntime = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+const awsAccessKeyId = onLambdaRuntime
+  ? process.env.BEDROCK_ACCESS_KEY_ID?.trim() || undefined
+  : process.env.AWS_ACCESS_KEY_ID?.trim() || process.env.BEDROCK_ACCESS_KEY_ID?.trim() || undefined;
+
+const awsSecretAccessKey = onLambdaRuntime
+  ? process.env.BEDROCK_SECRET_ACCESS_KEY?.trim() || undefined
+  : process.env.AWS_SECRET_ACCESS_KEY?.trim() ||
+    process.env.BEDROCK_SECRET_ACCESS_KEY?.trim() ||
+    undefined;
 
 export const config = {
   databaseUrl: required(
@@ -91,10 +120,10 @@ export const config = {
   awsAccessKeyId,
   awsSecretAccessKey,
 
-  // On Lambda, credentials arrive through the execution role rather than the environment —
-  // and must, since Lambda reserves AWS_ACCESS_KEY_ID and refuses to set it. Callers use this
-  // to decide whether absent keys are a misconfiguration or the expected arrangement.
-  onLambda: Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME),
+  // Distinguishes "no credentials configured" (a local misconfiguration worth failing loudly on)
+  // from "running on Lambda", where an absent explicit pair is expected and the SDK default chain
+  // is the intended source.
+  onLambda: onLambdaRuntime,
   embeddingProvider,
   // Thresholds for the preferred embedding space. When auto falls back, recall still works —
   // near-duplicate matching is slightly looser or tighter depending on the provider.

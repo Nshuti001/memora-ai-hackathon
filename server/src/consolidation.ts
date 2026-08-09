@@ -37,10 +37,13 @@ function client(): AnthropicBedrock {
     if (!config.awsAccessKeyId || !config.awsSecretAccessKey) {
       throw new Error('No AWS credentials for consolidation. Set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.');
     }
+    // One retry, matching the agent. Consolidation runs on a button press, and retrying an
+    // exhausted quota with backoff makes that button appear to hang.
     bedrock = new AnthropicBedrock({
       awsRegion: config.awsRegion,
       awsAccessKey: config.awsAccessKeyId,
       awsSecretKey: config.awsSecretAccessKey,
+      maxRetries: 1,
     });
   }
   return bedrock;
@@ -151,13 +154,55 @@ async function distill(members: Memory[]): Promise<string> {
       .trim();
 
     if (!text || text === 'NONE') {
-      return [...members].sort((a, b) => b.importance - a.importance)[0].content;
+      return representativeSummary(members);
     }
     return text;
   } catch (err) {
     console.error('[consolidation] distillation failed, falling back to representative', err);
-    return [...members].sort((a, b) => b.importance - a.importance)[0].content;
+    return representativeSummary(members);
   }
+}
+
+/**
+ * What to write when Claude cannot distil the cluster.
+ *
+ * Returning the strongest member verbatim — the previous behaviour — creates a memory byte-identical
+ * to one that already exists, which reads as a bug rather than a fallback and tells a reader nothing
+ * about why it was created. This states plainly what it is: a stand-in covering N episodes, with the
+ * terms they actually share, so the `derived_from` edges still lead somewhere meaningful.
+ */
+const STOPWORDS = new Set(
+  ('the a an and or but of to in on at for with from by is are was were be been it its this that ' +
+    'we i they he she you our their my your as it\'s has have had will would should could not no ' +
+    'so then than there here when what which who whom how why all any some each').split(/\s+/),
+);
+
+function sharedTerms(members: Memory[], limit = 3): string[] {
+  const counts = new Map<string, number>();
+  for (const m of members) {
+    const seen = new Set(
+      m.content
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length > 3 && !STOPWORDS.has(w)),
+    );
+    for (const w of seen) counts.set(w, (counts.get(w) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .filter(([, n]) => n >= Math.max(2, Math.ceil(members.length / 2)))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([w]) => w);
+}
+
+function representativeSummary(members: Memory[]): string {
+  const strongest = [...members].sort((a, b) => b.importance - a.importance)[0];
+  const terms = sharedTerms(members);
+  const about = terms.length ? ` about ${terms.join(', ')}` : '';
+  return (
+    `${members.length} related episodes${about}. Summarised without a model, so this is the ` +
+    `strongest of them rather than a generalisation: "${strongest.content}"`
+  );
 }
 
 export interface ConsolidationResult {

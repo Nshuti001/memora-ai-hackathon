@@ -159,6 +159,40 @@ Two Agent Skills encode the CockroachDB expertise this project accumulated, in t
 | **Cross-agent sharing** | Memories flagged `shared` are recallable by every agent in the tenant | One agent's discovery becomes available to the fleet |
 | **Full audit trail** | Every read and write lands in `memory_audit` with latency | Answers "why did the agent say that?" after the fact |
 
+## Running without a model at all
+
+Our Bedrock account has a zero on-demand quota on every chat model, in every region — a new-account
+restriction, not a configuration mistake. Rather than let that take the product down, the memory
+layer runs on its own, and the deployed demo is currently serving this path.
+
+That is the point worth reading: **none of what makes this a memory needs an LLM.** Embedding,
+vector recall, deduplication, classification, supersession and time travel are all database work.
+Only the conversational wrapper is Claude's.
+
+So when Bedrock is unavailable the agent keeps its behaviour and drops only the reasoning:
+
+- **Statements are still classified.** `heuristics.ts` decides `episodic` / `semantic` /
+  `procedural` from shallow language rules, and sets importance from them. Filing everything as
+  `semantic` would have been easier and would have quietly deleted memory types from the demo.
+- **Corrections still supersede.** "actually, retention is ninety days now" finds the nearest
+  existing memory, marks it superseded, and writes a `supersedes` edge — so the knowledge graph and
+  `AS OF SYSTEM TIME` still have something real to show.
+- **Writes still refuse when they cannot be honest.** If embeddings are unavailable, storing a
+  memory would put a row in the table that vector recall could never retrieve, so it declines and
+  says why instead.
+- **Every such reply is labelled** "memory layer only — not model output", in the API payload and in
+  the dashboard. Nothing pretends to be reasoning.
+
+Two failure modes this had to solve, both of which made the deployment feel broken rather than
+degraded:
+
+- A throttled Bedrock call was retried with exponential backoff, so a single message took **134
+  seconds** before the fallback even started — longer than Lambda's timeout, so the request simply
+  died. The SDK is now capped at one retry, and a circuit breaker skips Bedrock entirely for 60
+  seconds after a failure. The same seven-turn script went from **15m42s to 8.2s**.
+- The heuristics are covered by tests, because a regression there would leave the demo *looking*
+  fine while silently losing memory types and supersession.
+
 ## Production readiness
 
 - **Tenant isolation** is derived from the API key, never from the request body — a caller cannot read
@@ -175,7 +209,7 @@ Two Agent Skills encode the CockroachDB expertise this project accumulated, in t
 - **Graceful degradation.** The dashboard shows "API unreachable" with the exact fix rather than fake
   numbers; consolidation falls back to a representative memory if Bedrock is unavailable; the health
   check runs a real query so it fails when the database is unreachable, not just when the process is.
-- **100 tests**, runnable with no AWS account.
+- **122 tests**; 39 of them need no database and no AWS account at all.
 
 ---
 
@@ -228,7 +262,7 @@ misconfigured".
 cd server && npm test
 ```
 
-100 tests against a real CockroachDB (an in-memory fake would exercise none of the vector index, MVCC,
+122 tests against a real CockroachDB (an in-memory fake would exercise none of the vector index, MVCC,
 or serializable behaviour that matters here). They skip cleanly with a message if no cluster is
 reachable.
 
@@ -280,7 +314,7 @@ tenant for local development.
 | [server/src/embeddings.ts](server/src/embeddings.ts) | Titan embeddings, the local provider, unit-vector normalization |
 | [server/src/observability.ts](server/src/observability.ts) | Latency metrics and the distributed rate limiter |
 | [server/src/db.ts](server/src/db.ts) | Pool and serializable-retry transaction wrapper |
-| [server/test/](server/test/) | 100 tests |
+| [server/test/](server/test/) | 122 tests |
 | [src/pages/DashboardPage.tsx](src/pages/DashboardPage.tsx) | Chat, memory browser, knowledge graph, time travel |
 | [src/components/KnowledgeGraph.tsx](src/components/KnowledgeGraph.tsx) | Force-directed graph over real memory links |
 | [.claude/skills/](.claude/skills/) | CockroachDB Agent Skills |
