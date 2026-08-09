@@ -33,5 +33,8 @@ server/.env.backup*
 .deploy
 function.zip
 
+# Local CockroachDB data directory (dev-only, created by start-single-node)
+.cockroach-data
+
 # Hackathon rules document — not our source, not for redistribution
 rules.docx

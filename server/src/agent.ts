@@ -211,6 +211,10 @@ export interface AgentTurn {
 function bedrockUnavailableReason(err: unknown): string | null {
   const message = err instanceof Error ? err.message : String(err);
 
+  if (/No AWS credentials/i.test(message)) {
+    // client()'s own message for local dev with no keys configured — already actionable verbatim.
+    return message;
+  }
   if (/credential/i.test(message) && /resolve|provider chain|not found/i.test(message)) {
     return 'No AWS credentials. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in server/.env — see SETUP.md step 2.';
   }
