@@ -161,9 +161,16 @@ Two Agent Skills encode the CockroachDB expertise this project accumulated, in t
 
 ## Running without a model at all
 
-Our Bedrock account has a zero on-demand quota on every chat model, in every region — a new-account
-restriction, not a configuration mistake. Rather than let that take the product down, the memory
-layer runs on its own, and the deployed demo is currently serving this path.
+Our Bedrock account has a zero on-demand quota on every chat model, in every region. This is not a
+missing model grant — `GetFoundationModelAvailability` for `anthropic.claude-sonnet-4-6` returns
+`authorizationStatus: AUTHORIZED` and `entitlementAvailability: AVAILABLE`. It is the quota itself:
+Service Quotas shows `L-248E47B7`, *Global cross-region model inference tokens per day*, with an
+applied account value of **0** against an AWS default of 8,640,000,000, marked **Not adjustable**.
+Even a call capped at `maxTokens: 1` is refused, on Claude, Nova and Llama alike. AWS support case
+**178695395000520** is open to have the defaults restored.
+
+Rather than let that take the product down, the memory layer runs on its own, and the deployed demo
+is currently serving this path.
 
 That is the point worth reading: **none of what makes this a memory needs an LLM.** Embedding,
 vector recall, deduplication, classification, supersession and time travel are all database work.
