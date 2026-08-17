@@ -146,11 +146,11 @@ Switch to the Graph tab.
 
 Fast cuts:
 
-- `npm test` → **100 passing**
+- `npm test` → **122 passing**
 - `/api/metrics` → p50/p95/p99 per operation
 - `scripts/ccloud-ops.sh preflight` → cluster, backups, network, retention
 
-> "A hundred tests. Tenant isolation, injection resistance on the time-travel path, and the
+> "A hundred and twenty-two tests. Tenant isolation, injection resistance on the time-travel path, and the
 > normalization property the vector index depends on are all covered."
 
 ## 2:45–3:00 — Close
