@@ -161,13 +161,29 @@ async function bedrockEmbed(text: string): Promise<number[]> {
  */
 export type EmbedPurpose = 'document' | 'query';
 
-async function cohereEmbed(text: string, purpose: EmbedPurpose): Promise<number[]> {
+/**
+ * Cohere accepts up to 96 texts per invocation. Bedrock's rate limits are counted per *request*, not
+ * per text, so batching is the difference between one throttled call and ninety-six of them.
+ */
+export const COHERE_MAX_BATCH = 96;
+
+/**
+ * Embeds a batch of texts in a single Bedrock invocation.
+ *
+ * Order is preserved: `embeddings[i]` corresponds to `texts[i]`, which the callers rely on to pair
+ * vectors back to their source rows.
+ */
+async function cohereEmbedMany(texts: string[], purpose: EmbedPurpose): Promise<number[][]> {
+  if (texts.length > COHERE_MAX_BATCH) {
+    throw new Error(`Cohere accepts at most ${COHERE_MAX_BATCH} texts per call, got ${texts.length}`);
+  }
+
   const command = new InvokeModelCommand({
     modelId: config.cohereEmbedModelId,
     contentType: 'application/json',
     accept: 'application/json',
     body: JSON.stringify({
-      texts: [text],
+      texts,
       input_type: purpose === 'query' ? 'search_query' : 'search_document',
       truncate: 'END',
     }),
@@ -179,18 +195,26 @@ async function cohereEmbed(text: string, purpose: EmbedPurpose): Promise<number[
   };
 
   // Cohere returns `embeddings` as a bare array, or as { float: [...] } when embedding_types is set.
-  const raw = Array.isArray(payload.embeddings)
-    ? payload.embeddings[0]
-    : payload.embeddings?.float?.[0];
+  const rows = Array.isArray(payload.embeddings) ? payload.embeddings : payload.embeddings?.float;
 
-  if (!raw || raw.length !== EMBED_DIM) {
-    throw new Error(
-      `Cohere returned ${raw?.length ?? 0} dimensions, expected ${EMBED_DIM}. ` +
-        `If you changed COHERE_EMBED_MODEL_ID, update EMBED_DIM and the VECTOR(...) column together.`,
-    );
+  if (!rows || rows.length !== texts.length) {
+    throw new Error(`Cohere returned ${rows?.length ?? 0} embeddings for ${texts.length} texts`);
   }
 
-  return toUnitVector(raw);
+  return rows.map((raw) => {
+    if (!raw || raw.length !== EMBED_DIM) {
+      throw new Error(
+        `Cohere returned ${raw?.length ?? 0} dimensions, expected ${EMBED_DIM}. ` +
+          `If you changed COHERE_EMBED_MODEL_ID, update EMBED_DIM and the VECTOR(...) column together.`,
+      );
+    }
+    return toUnitVector(raw);
+  });
+}
+
+async function cohereEmbed(text: string, purpose: EmbedPurpose): Promise<number[]> {
+  const [vector] = await cohereEmbedMany([text], purpose);
+  return vector;
 }
 
 // ---------------------------------------------------------------------------
@@ -358,14 +382,75 @@ function short(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).slice(0, 100);
 }
 
-/** Embeds many texts sequentially. Deliberately serial — parallel calls trip Bedrock's rate limit. */
+/**
+ * Embeds many texts, batching into as few Bedrock calls as the provider allows.
+ *
+ * This used to loop over `embed()` one text at a time. That is correct but pathologically slow at
+ * bulk sizes: Bedrock throttles per *request*, so 450 texts meant 450 chances to be throttled, and
+ * the backoff between them dominated everything. Cohere takes 96 texts per call, which turns the
+ * same work into five requests.
+ *
+ * Batches never go out concurrently — the point is to make fewer requests, not more parallel ones.
+ * Providers without a batch API (Titan, the local stand-in) fall back to the serial path, and any
+ * text already in the cache is served from it rather than re-sent.
+ */
 export async function embedBatch(
   texts: string[],
   purpose: EmbedPurpose = 'document',
 ): Promise<Embedding[]> {
-  const results: Embedding[] = [];
-  for (const text of texts) results.push(await embed(text, purpose));
-  return results;
+  const model = activeEmbeddingModel();
+
+  // Only Cohere has a batch endpoint here, and only when it is the model actually in play.
+  if (model !== config.cohereEmbedModelId) {
+    const results: Embedding[] = [];
+    for (const text of texts) results.push(await embed(text, purpose));
+    return results;
+  }
+
+  const results = new Array<Embedding | undefined>(texts.length);
+  const pending: { index: number; text: string }[] = [];
+
+  for (let i = 0; i < texts.length; i += 1) {
+    const trimmed = texts[i].trim();
+    if (!trimmed) throw new Error('Cannot embed empty text');
+
+    const key = `${model}:${purpose}:${trimmed}`;
+    const hot = cache.get(key);
+    if (hot) {
+      results[i] = { vector: hot, model };
+      continue;
+    }
+
+    const persisted = await readCache(`${model}#${purpose}`, trimmed);
+    if (persisted) {
+      cache.set(key, persisted);
+      results[i] = { vector: persisted, model };
+      continue;
+    }
+
+    pending.push({ index: i, text: trimmed });
+  }
+
+  for (let start = 0; start < pending.length; start += COHERE_MAX_BATCH) {
+    const slice = pending.slice(start, start + COHERE_MAX_BATCH);
+    const vectors = await cohereEmbedMany(
+      slice.map((p) => p.text),
+      purpose,
+    );
+
+    for (let j = 0; j < slice.length; j += 1) {
+      const { index, text } = slice[j];
+      const vector = vectors[j];
+      cache.set(`${model}:${purpose}:${text}`, vector);
+      void writeCache(`${model}#${purpose}`, text, vector);
+      results[index] = { vector, model };
+    }
+  }
+
+  return results.map((r, i) => {
+    if (!r) throw new Error(`Embedding missing for text at index ${i}`);
+    return r;
+  });
 }
 
 /** Test seam — the in-process cache and fallback latches are module-global. */

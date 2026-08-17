@@ -200,6 +200,48 @@ degraded:
 - The heuristics are covered by tests, because a regression there would leave the demo *looking*
   fine while silently losing memory types and supersession.
 
+## The vector index is also a classifier
+
+Memora has to answer a classification question on every turn — *is this worth remembering, or is it
+small talk?* — and the answer used to be a word count: fewer than four words, don't store.
+
+That is now a real classifier, and the classifier is the database. Labelled examples are embedded
+with the same Cohere pipeline that embeds memories and written to the same `memories` table under
+their own tenant, so classifying an utterance is one approximate-nearest-neighbour query against
+`memories_embedding_idx` — the same index that serves recall. There is no model to train, serve or
+version; kNN is a lazy learner, and the "training" is the insert.
+
+Measured on **CLINC150** ([Larson et al., EMNLP 2019](https://github.com/clinc/oos-eval), CC BY 3.0),
+a published benchmark that pairs 150 fine-grained intents with a labelled *out-of-scope* set — which
+is exactly the in-scope/out-of-scope decision Memora makes. Reproduce with `npm run ml:clinc`:
+
+| | |
+|---|---|
+| In-scope accuracy, classifier alone | **94.7%** (213/225) |
+| In-scope accuracy, with OOS rejection | **86.2%** (194/225) |
+| Out-of-scope recall | **88.7%** (133/150) |
+| Fitted threshold | 1.0985 (val balanced accuracy 97.3%) |
+| Classification latency | p50 **257 ms** |
+
+15-way problem, 450 labelled examples, k=5, distance-weighted voting. No model trained, no GPU, no
+inference endpoint.
+
+Three decisions worth stating:
+
+- **Out-of-scope is a distance threshold, not a class.** Training a class for "everything else" is a
+  losing game — the complement of 150 intents is unbounded. If the nearest labelled example is
+  further than the threshold, the utterance is out of scope.
+- **The threshold is fitted on validation and never on test**, and it optimises *balanced* accuracy.
+  Plain accuracy is the wrong objective here: a threshold that accepts everything scores well on a
+  mostly-in-scope validation set while being useless at the one job it has.
+- **The hot-path query carries no filters beyond the index prefix.** This one was learned the hard
+  way. An earlier version also filtered on `superseded_by`, `archived_at`, `embedding_model` and the
+  presence of a label — all reasonable-looking, and every one of them pushed the planner off
+  `memories_embedding_idx` onto a full scan. `EXPLAIN` said `scan … 79% of the table` where it now
+  says `vector search … prefix spans: [/'clinc_eval'/'af0b…' - …]`. The invariants those filters
+  protected are enforced on write instead, so the read can stay on the index. Accuracy was identical
+  before and after — which is the point: nothing would have told us except the query plan.
+
 ## Production readiness
 
 - **Tenant isolation** is derived from the API key, never from the request body — a caller cannot read
@@ -216,7 +258,7 @@ degraded:
 - **Graceful degradation.** The dashboard shows "API unreachable" with the exact fix rather than fake
   numbers; consolidation falls back to a representative memory if Bedrock is unavailable; the health
   check runs a real query so it fails when the database is unreachable, not just when the process is.
-- **122 tests**; 39 of them need no database and no AWS account at all.
+- **127 tests**; 44 of them need no database and no AWS account at all.
 
 ---
 
@@ -269,7 +311,7 @@ misconfigured".
 cd server && npm test
 ```
 
-122 tests against a real CockroachDB (an in-memory fake would exercise none of the vector index, MVCC,
+127 tests against a real CockroachDB (an in-memory fake would exercise none of the vector index, MVCC,
 or serializable behaviour that matters here). They skip cleanly with a message if no cluster is
 reachable.
 
@@ -321,7 +363,7 @@ tenant for local development.
 | [server/src/embeddings.ts](server/src/embeddings.ts) | Titan embeddings, the local provider, unit-vector normalization |
 | [server/src/observability.ts](server/src/observability.ts) | Latency metrics and the distributed rate limiter |
 | [server/src/db.ts](server/src/db.ts) | Pool and serializable-retry transaction wrapper |
-| [server/test/](server/test/) | 122 tests |
+| [server/test/](server/test/) | 127 tests |
 | [src/pages/DashboardPage.tsx](src/pages/DashboardPage.tsx) | Chat, memory browser, knowledge graph, time travel |
 | [src/components/KnowledgeGraph.tsx](src/components/KnowledgeGraph.tsx) | Force-directed graph over real memory links |
 | [.claude/skills/](.claude/skills/) | CockroachDB Agent Skills |
