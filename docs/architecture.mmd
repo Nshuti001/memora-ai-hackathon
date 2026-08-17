@@ -1,0 +1,46 @@
+flowchart TB
+    User([User])
+
+    subgraph AWS["Amazon Web Services"]
+        direction TB
+        CF["CloudFront + S3<br/><small>React dashboard</small>"]
+        APIGW["API Gateway HTTP API<br/><small>public entry point</small>"]
+        LAM["AWS Lambda<br/><small>agent loop and memory API</small>"]
+
+        subgraph BR["Amazon Bedrock"]
+            direction LR
+            CLAUDE["Claude Sonnet 4.6<br/><small>reasoning, 5 memory tools</small>"]
+            EMB["Titan V2 / Cohere v3<br/><small>1024-dim embeddings</small>"]
+        end
+    end
+
+    subgraph CRDB["CockroachDB Cloud"]
+        direction TB
+        VEC[("memories<br/><small>VECTOR(1024) + distributed vector index</small>")]
+        MVCC[("MVCC history<br/><small>7-day AS OF SYSTEM TIME window</small>")]
+        GRAPH[("memory_links<br/><small>typed edges</small>")]
+        AUDIT[("memory_audit + rate_limits")]
+    end
+
+    OPS["Managed MCP Server · ccloud CLI<br/><small>read-only inspection, EXPLAIN, backups</small>"]
+
+    User --> CF
+    CF -->|"/api/* same origin"| APIGW
+    APIGW -->|"proxy, payload format 2.0"| LAM
+
+    LAM --> CLAUDE
+    LAM --> EMB
+
+    LAM -->|"ANN search: embedding &lt;-&gt; query"| VEC
+    LAM -->|"AS OF SYSTEM TIME"| MVCC
+    LAM --> GRAPH
+    LAM --> AUDIT
+
+    OPS -.-> CRDB
+
+    classDef aws fill:#eaf4fb,stroke:#0c6882,stroke-width:1px,color:#0b1220
+    classDef db fill:#e9f7f1,stroke:#04785a,stroke-width:1px,color:#0b1220
+    classDef ops fill:#f4f1fb,stroke:#6d28d9,stroke-width:1px,color:#0b1220
+    class CF,APIGW,LAM,CLAUDE,EMB aws
+    class VEC,MVCC,GRAPH,AUDIT db
+    class OPS ops
