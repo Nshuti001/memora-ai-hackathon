@@ -378,6 +378,13 @@ tenant for local development.
 | [.claude/skills/](.claude/skills/) | CockroachDB Agent Skills |
 | [scripts/ccloud-ops.sh](scripts/ccloud-ops.sh) | ccloud control-plane operations |
 
+## The team — CHAMPS
+
+- Carine UMUGABEKAZE
+- ISHIMWE Ami Paradis
+- CYUZUZO Pacifique
+- NSHUTI SANDRA
+
 ## Prior work disclosure
 
 Per the hackathon's new-projects rule: the marketing pages and visual design were scaffolded with
