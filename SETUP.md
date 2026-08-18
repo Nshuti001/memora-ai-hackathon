@@ -1,8 +1,6 @@
 # Setup — accounts and credentials
 
-Submission deadline: **August 18, 2026, 5:00 pm ET**.
-
-**You do not need any of this to start working.** The whole memory layer — schema, vector index, time
+**You do not need any of this to run the project.** The whole memory layer — schema, vector index, time
 travel, consolidation, decay, the dashboard — runs against a local CockroachDB with an offline
 embedding provider. If you just want to see it work:
 
@@ -17,10 +15,9 @@ cp .env.example .env
 npm run db:migrate && npm run db:seed && npm run dev
 ```
 
-The accounts below are what the **submission** needs: real Titan embeddings, Claude reasoning, and a
-deployment judges can visit. None of these steps can be automated — they need a human to accept terms
-and enter details. Split them across the team and do them in parallel; it is about 45 minutes of
-wall-clock time, most of which is waiting for approvals.
+The accounts below are what a full deployment needs: real Bedrock embeddings, Claude reasoning, and a
+public URL. None of these steps can be automated — they need a human to accept terms and enter
+details. Budget about 45 minutes, most of it waiting for approvals.
 
 ---
 

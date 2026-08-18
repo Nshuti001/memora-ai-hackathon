@@ -19,6 +19,9 @@ You:  What did you think an hour ago?
 Agent: Sixty days — that was raised after the audit. Before that I had thirty.
 ```
 
+**Live:** <https://d275lpbrornn20.cloudfront.net> — the dashboard, chat, semantic search, the memory
+graph and Time Travel all run against a live CockroachDB Cloud cluster.
+
 ---
 
 ## Architecture
@@ -34,7 +37,7 @@ flowchart TB
 
         subgraph BR["Amazon Bedrock"]
             CLAUDE[Claude<br/>reasoning and tool use]
-            TITAN[Titan Text Embeddings V2<br/>1024-dim vectors]
+            EMB[Titan V2 / Cohere v3<br/>1024-dim embeddings]
         end
     end
 
@@ -52,7 +55,7 @@ flowchart TB
     CF -->|"/api/* same-origin"| APIGW
     APIGW -->|"proxy, payload format 2.0"| LAM
     LAM -->|"5-tool agent loop"| CLAUDE
-    LAM -->|"embed"| TITAN
+    LAM -->|"embed"| EMB
     LAM -->|"ANN: embedding &lt;-&gt; query"| VEC
     LAM -->|"AS OF SYSTEM TIME"| MVCC
     LAM --> GRAPH
@@ -69,7 +72,8 @@ The rules require at least two. We used all four.
 
 ### 1. Distributed Vector Indexing — the memory layer itself
 
-`memories.embedding` is a `VECTOR(1024)` column carrying Titan Text Embeddings V2 output, indexed by
+`memories.embedding` is a `VECTOR(1024)` column carrying Bedrock embedding output — Titan Text
+Embeddings V2 or Cohere Embed v3, both exactly 1024-dimensional — indexed by
 `memories_embedding_idx`. Every `recall_memory` tool call is an approximate-nearest-neighbour search
 over that index.
 
@@ -318,10 +322,12 @@ reachable.
 ### Deploying
 
 ```bash
-cd server && ./deploy.sh
+cd server && ./deploy.sh && ./deploy-web.sh
 ```
 
-See [DEPLOY.md](DEPLOY.md).
+`deploy.sh` puts the API on Lambda; `deploy-web.sh` puts an API Gateway HTTP API in front of it and
+serves the dashboard from S3 through CloudFront, with `/api/*` proxied to the same origin. See
+[DEPLOY.md](DEPLOY.md).
 
 ---
 
@@ -360,7 +366,10 @@ tenant for local development.
 | [server/src/time-travel.ts](server/src/time-travel.ts) | `AS OF SYSTEM TIME` recall, belief diff, provenance, the timestamp allowlist |
 | [server/src/consolidation.ts](server/src/consolidation.ts) | Clustering, distillation, decay, reinstatement |
 | [server/src/agent.ts](server/src/agent.ts) | Claude tool-use loop, streaming and buffered |
-| [server/src/embeddings.ts](server/src/embeddings.ts) | Titan embeddings, the local provider, unit-vector normalization |
+| [server/src/embeddings.ts](server/src/embeddings.ts) | Titan and Cohere embeddings, batching, the local provider, unit-vector normalization |
+| [server/src/heuristics.ts](server/src/heuristics.ts) | Memory-kind and correction rules used when no model is available |
+| [server/src/intent.ts](server/src/intent.ts) | kNN intent classification over the vector index, out-of-scope thresholding |
+| [server/src/clinc-eval.ts](server/src/clinc-eval.ts) | CLINC150 benchmark harness (`npm run ml:clinc`) |
 | [server/src/observability.ts](server/src/observability.ts) | Latency metrics and the distributed rate limiter |
 | [server/src/db.ts](server/src/db.ts) | Pool and serializable-retry transaction wrapper |
 | [server/test/](server/test/) | 127 tests |
