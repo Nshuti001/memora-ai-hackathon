@@ -380,7 +380,7 @@ tenant for local development.
 
 ## The team — CHAMPS
 
-- Carine UMUGABEKAZE
+- Carine UMUGABEKAZI
 - ISHIMWE Ami Paradis
 - CYUZUZO Pacifique
 - NSHUTI SANDRA
